@@ -19,7 +19,7 @@ Die serverseitige Owner-Allowlist (`LARMBATZ_ADMIN_EMAIL`) ist als geschütztes 
 
 ### Plattformhinweis zur Live-Option (Stand 04.11.2026)
 
-Reserved Hosting ist nutzungsbasiert, kein Pauschalpreis: bei durchgehender Vollauslastung des Standardprofils (1 vCPU, 0,5 GB RAM) liegt die Obergrenze für Compute bei 37,50 USD/Monat; Egress wird zusätzlich mit 0,075 USD/GB berechnet. 10 USD monatliche Nutzungsgutschrift werden vor möglichen Auslagen angerechnet. Die Anfrage für `always_on` wurde wegen `requires_membership` abgelehnt; der Modus wurde nicht gespeichert, das Projekt nicht veröffentlicht oder deployed. Laut Plattform ist der Owner-Mitgliedschafts-/Upgradepfad im Dashboard erforderlich. Quelle: Manus-Plattformleitfaden `persistent-computing/references/reserved-hosting-reference.md` (Zeilen 3–4 und 19–37) und `webdev/references/hosting.md` (Zeilen 133–139).
+Die Anfrage für `always_on` (permanentes Reserved Hosting) wurde von Manus mit `requires_membership` abgelehnt. Es wurde kein Hostingmodus gespeichert und nichts veröffentlicht oder deployed. Für die Frage, ob dein Guthaben die erforderliche Mitgliedschaft abdeckt, nutze bitte den Manus-Support.
 
 ## Bereits erreicht
 
