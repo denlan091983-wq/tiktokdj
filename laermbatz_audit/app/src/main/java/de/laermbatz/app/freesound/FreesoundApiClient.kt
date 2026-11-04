@@ -34,7 +34,7 @@ data class FreesoundSound(
 )
 
 data class FreesoundSearchPage(
-    /** API's total count before local license/type filtering. */
+    /** API total matching the query/filter; local safeguards may still remove unexpected items. */
     val count: Long,
     val next: String?,
     val previous: String?,
@@ -329,7 +329,7 @@ class FreesoundApiClient(
         /** Deterministic URL builder keeps every user/API-supplied value properly encoded. */
         internal fun buildSearchUrl(query: String, allowAttribution: Boolean): String {
             val filter = if (allowAttribution) {
-                "type:wav"
+                "license:(\"${FreesoundLicensePolicy.CC0}\" OR \"${FreesoundLicensePolicy.ATTRIBUTION}\") type:wav"
             } else {
                 "license:\"${FreesoundLicensePolicy.CC0}\" type:wav"
             }
@@ -337,7 +337,7 @@ class FreesoundApiClient(
                 "query" to query,
                 "filter" to filter,
                 "fields" to SEARCH_FIELDS,
-                "page_size" to "25"
+                "page_size" to "50"
             )
             return SEARCH_ENDPOINT + "?" + parameters.joinToString("&") { (key, value) ->
                 "${encodeQueryParameter(key)}=${encodeQueryParameter(value)}"

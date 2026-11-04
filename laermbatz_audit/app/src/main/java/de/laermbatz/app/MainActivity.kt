@@ -213,6 +213,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(
                 primary = Color(0xFFB3261E),
+                onPrimary = Color.White,
                 background = Color(0xFF111111),
                 surface = Color(0xFF1A1A1A)
             )) {
@@ -903,10 +904,14 @@ class MainActivity : ComponentActivity() {
                     if (isFinishing || isDestroyed) return@runOnUiThread
                     freesoundResults.addAll(page.results)
                     freesoundBusy = false
-                    freesoundStatus = if (page.results.isEmpty()) {
-                        "Keine zulässigen CC0${if (credentials.allowAttributionLicense) "/CC BY" else ""}-WAVs gefunden."
-                    } else {
-                        "${page.results.size} passende WAV-Treffer geladen; Suchtreffer gesamt: ${page.count}."
+                    val licenseLabel = if (credentials.allowAttributionLicense) "CC0/CC BY" else "CC0"
+                    freesoundStatus = when {
+                        page.results.isNotEmpty() ->
+                            "${page.results.size} passende WAV-Treffer geladen; Suchtreffer gesamt: ${page.count}."
+                        page.count <= 0L ->
+                            "Freesound meldet 0 Treffer für „$query“ im $licenseLabel-WAV-Filter. Versuche einen breiteren Suchbegriff."
+                        else ->
+                            "Freesound meldet ${page.count} Kandidaten, aber keiner bestand die lokale Lizenz-/WAV-Prüfung. Es wurde nichts geladen."
                     }
                 }
             } catch (error: Exception) {
@@ -1204,17 +1209,31 @@ class MainActivity : ComponentActivity() {
                                 freesoundStatus = message
                             }
                         }
-                        val page = freesoundApiClient.search(
-                            query = FreesoundAutoCategorizer.searchQuery(category),
-                            apiKey = credentials.clientSecretOrApiKey,
-                            allowAttribution = credentials.allowAttributionLicense
-                        )
-                        val sound = page.results.firstOrNull { candidate ->
-                            candidate.id !in usedSoundIds &&
-                                (candidate.filesize == null || candidate.filesize <= MAX_FREESOUND_FILE_BYTES)
-                        } ?: throw IOException(
-                            "Keine passende, lizenzzulässige WAV für ${category.label} gefunden. " +
-                                "Bereits heruntergeladene Rollen bleiben in der Bibliothek."
+                        var selectedSound: FreesoundSound? = null
+                        val searchQueries = FreesoundAutoCategorizer.searchQueries(category)
+                        for (candidateQuery in searchQueries) {
+                            if (autoSetCancelled) throw AutoSetCancelledException()
+                            runOnUiThread {
+                                if (!isFinishing && !isDestroyed) {
+                                    val message = "Auto-Set: suche ${category.label}-Loop (${trackIndex + 1}/6) mit „$candidateQuery“ …"
+                                    statusMessage = message
+                                    freesoundStatus = message
+                                }
+                            }
+                            val page = freesoundApiClient.search(
+                                query = candidateQuery,
+                                apiKey = credentials.clientSecretOrApiKey,
+                                allowAttribution = credentials.allowAttributionLicense
+                            )
+                            selectedSound = page.results.firstOrNull { candidate ->
+                                candidate.id !in usedSoundIds &&
+                                    (candidate.filesize == null || candidate.filesize <= MAX_FREESOUND_FILE_BYTES)
+                            }
+                            if (selectedSound != null) break
+                        }
+                        val sound = selectedSound ?: throw IOException(
+                            "Keine passende, lizenzzulässige WAV für ${category.label} nach " +
+                                "${searchQueries.size} Suchvarianten gefunden. Bereits geladene Loops bleiben in der Bibliothek."
                         )
 
                         val currentBytes = libraryDirectory.listFiles()

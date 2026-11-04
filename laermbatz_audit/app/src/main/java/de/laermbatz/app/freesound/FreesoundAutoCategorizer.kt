@@ -35,6 +35,25 @@ object FreesoundAutoCategorizer {
         FreesoundLoopCategory.UNCATEGORIZED -> ""
     }
 
+    /**
+     * Queries are tried from specific to broad because Freesound requires all ordinary query terms
+     * to match. The caller must retain the same strict license and WAV filters for every attempt.
+     */
+    fun searchQueries(category: FreesoundLoopCategory): List<String> {
+        val fallbacks = when (category) {
+            FreesoundLoopCategory.KICK -> listOf("techno kick", "kick drum", "kick")
+            FreesoundLoopCategory.BASSLINE -> listOf("techno bassline", "bassline loop", "bassline")
+            FreesoundLoopCategory.HI_HAT -> listOf("hi hat loop", "hi hat", "hihat")
+            FreesoundLoopCategory.PERCUSSION -> listOf("percussion loop", "percussion", "drum loop")
+            FreesoundLoopCategory.SYNTH -> listOf("synth loop", "synth")
+            FreesoundLoopCategory.EFFECTS -> listOf("sound effect loop", "riser loop", "impact")
+            FreesoundLoopCategory.UNCATEGORIZED -> emptyList()
+        }
+        return (listOf(searchQuery(category)) + fallbacks)
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
     private fun normalize(value: String): String = Normalizer
         .normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
         .replace(ACCENTS, "")

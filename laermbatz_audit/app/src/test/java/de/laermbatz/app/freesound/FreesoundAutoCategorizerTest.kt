@@ -60,5 +60,31 @@ class FreesoundAutoCategorizerTest {
         assertEquals("techno synth loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.SYNTH))
         assertEquals("techno sound effect loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.EFFECTS))
         assertEquals("", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.UNCATEGORIZED))
+
+        assertEquals(
+            listOf("techno kick loop", "techno kick", "kick drum", "kick"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.KICK)
+        )
+        assertEquals(
+            listOf("techno bassline loop", "techno bassline", "bassline loop", "bassline"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.BASSLINE)
+        )
+        assertEquals(
+            listOf("techno hi hat loop", "hi hat loop", "hi hat", "hihat"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.HI_HAT)
+        )
+        assertEquals(
+            listOf("techno percussion loop", "percussion loop", "percussion", "drum loop"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.PERCUSSION)
+        )
+        assertEquals(
+            listOf("techno synth loop", "synth loop", "synth"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.SYNTH)
+        )
+        assertEquals(
+            listOf("techno sound effect loop", "sound effect loop", "riser loop", "impact"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.EFFECTS)
+        )
+        assertEquals(emptyList<String>(), FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.UNCATEGORIZED))
     }
 }

@@ -4,7 +4,7 @@ Dieses private Repository bündelt die aktuellen Projektquellen für den **LÄRM
 
 ## Inhalt
 
-- [`laermbatz_audit/`](laermbatz_audit/) — Android-App (Kotlin/Jetpack Compose und nativer Oboe/C++-Audiomixer), Tests, Buildskripte und Audit-Roadmap.
+- [`laermbatz_audit/`](laermbatz_audit/) — Android-App (Kotlin/Jetpack Compose und nativer Oboe/C++-Audiomixer), Tests, Buildskripte, Audit-Roadmap und offizielle Freesound-API-Notiz.
 - [`larmradio/`](larmradio/) — React-/Express-/tRPC-Website mit Managed-MySQL-Schema, Studio-Upload, einzeln bestätigter Veröffentlichung, Audioarchiv und statusgeprüften Stream-/Download-Proxys.
 - [`LARMBATZ_freesound_auto_download.py`](LARMBATZ_freesound_auto_download.py) — CLI zur Freesound-API-/lokalen Loopverwaltung, Analyse und SQLite-Indizierung.
 - [`artifacts/Laermbatz-debug.apk`](artifacts/Laermbatz-debug.apk) — geprüfter ARM64-Debug-Build für privaten Sideload-Test; SHA-256 steht in [`artifacts/SHA256SUMS.txt`](artifacts/SHA256SUMS.txt).

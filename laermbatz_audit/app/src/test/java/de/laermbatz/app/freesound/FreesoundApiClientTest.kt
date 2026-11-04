@@ -52,9 +52,13 @@ class FreesoundApiClientTest {
         val url = FreesoundApiClient.buildSearchUrl("drums + noise", allowAttribution = false)
         assertTrue(url.startsWith("https://freesound.org/apiv2/search/?"))
         assertTrue(url.contains("query=drums+%2B+noise"))
-        assertTrue(url.contains("page_size=25"))
+        assertTrue(url.contains("page_size=50"))
         assertTrue(url.contains("license%3A%22Creative+Commons+0%22+type%3Awav"))
         assertTrue(url.contains("fields=id%2Cname%2Cusername%2Clicense%2Ctype%2Cduration%2Cfilesize%2Curl%2Cdownload%2Cpreviews%2Ctags"))
+
+        val attributionUrl = FreesoundApiClient.buildSearchUrl("kick", allowAttribution = true)
+        assertTrue(attributionUrl.contains("license%3A%28%22Creative+Commons+0%22+OR+%22Attribution%22%29+type%3Awav"))
+        assertTrue(attributionUrl.contains("page_size=50"))
     }
 
     @Test
