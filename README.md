@@ -31,7 +31,7 @@ Die Website ist derzeit **nicht öffentlich veröffentlicht**. Das Live-Radio me
 
 Das Python-Werkzeug und die App verlangen eigene Freesound-Zugangsdaten, soweit die jeweilige API-Nutzung sie voraussetzt. Es wurden keine API-Schlüssel, OAuth-Tokens, `.env`-Dateien oder GitHub-Credentials in dieses Repository aufgenommen. Vor einer Weitergabe/Monetarisierung für jeden Loop die Lizenz und vorgeschriebenen Credits prüfen.
 
-**Nicht enthalten:** persönliche Mix-Aufnahmen, private Android-Bibliotheken, heruntergeladene Samples, lokale/verwaltete Datenbankexporte und Server-Secrets. Im verwendeten Projektarbeitsverzeichnis lagen keine Audioaufnahmen oder SQLite-Datenbankdateien zum Übertragen vor. Das Weglassen schützt persönliche Daten und verhindert, dass Sample-Rechte ungeprüft weiterverteilt werden.
+**Nicht enthalten:** persönliche Mix-Aufnahmen, private Android-Bibliotheken, heruntergeladene Samples, lokale/verwaltete Datenbankexporte, Server-Secrets sowie automatisch erzeugte Manus-Netzwerk-/Diagnoselogs. Im verwendeten Projektarbeitsverzeichnis lagen keine Audioaufnahmen oder SQLite-Datenbankdateien zum Übertragen vor. Das Weglassen schützt persönliche Daten und verhindert, dass Sample-Rechte ungeprüft weiterverteilt werden.
 
 ## Prüfnachweis
 
