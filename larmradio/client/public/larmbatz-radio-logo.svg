@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">LÄRMBATZ Radio</title>
+  <desc id="desc">Industrial Techno Logo mit rotem Kreis und Master-Waveform.</desc>
+  <rect width="512" height="512" rx="44" fill="#09090a"/>
+  <path d="M256 36a220 220 0 1 0 0 440 220 220 0 0 0 0-440Zm0 22a198 198 0 1 1 0 396 198 198 0 0 1 0-396Z" fill="#f02a37"/>
+  <path d="M98 261h42l22-49 31 112 33-154 34 188 31-132 27 87 21-52h73" fill="none" stroke="#eee9e4" stroke-width="17" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M126 371h260" fill="none" stroke="#f02a37" stroke-width="8"/>
+  <text x="256" y="415" text-anchor="middle" fill="#f02a37" font-family="Impact, 'Arial Narrow', sans-serif" font-size="30" font-weight="900" letter-spacing="6">LÄRMBATZ</text>
+</svg>
