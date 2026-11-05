@@ -2,6 +2,9 @@ package de.laermbatz.app.audio
 
 /** JNI-Fassade für den callback-sicheren nativen Sechs-Spur-Mixer. */
 object AudioEngine {
+    /** Oboe kUnspecified: Android wählt die Medien-Standardroute. */
+    const val OUTPUT_DEVICE_AUTO = 0
+
     init {
         System.loadLibrary("laermbatz_audio")
     }
@@ -11,6 +14,8 @@ object AudioEngine {
     fun release() = nativeRelease()
     fun isStreamRunning(): Boolean = nativeIsStreamRunning()
     fun lastOutputPeak(): Float = nativeGetLastOutputPeak()
+    fun setOutputDeviceId(deviceId: Int) = nativeSetOutputDeviceId(deviceId)
+    fun outputDeviceId(): Int = nativeGetOutputDeviceId()
     fun loadTrack(index: Int, wav: DecodedWav, bars: Int): Boolean =
         nativeLoadTrack(index, wav.samples, wav.sampleRate, wav.channels, bars)
     fun clearTrack(index: Int): Boolean = nativeClearTrack(index)
@@ -41,6 +46,8 @@ object AudioEngine {
     private external fun nativeRelease()
     private external fun nativeIsStreamRunning(): Boolean
     private external fun nativeGetLastOutputPeak(): Float
+    private external fun nativeSetOutputDeviceId(deviceId: Int)
+    private external fun nativeGetOutputDeviceId(): Int
     private external fun nativeLoadTrack(
         index: Int,
         samples: FloatArray,

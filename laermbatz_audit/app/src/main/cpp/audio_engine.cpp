@@ -69,6 +69,7 @@ laermbatz::MasterRecordingRing<kRecordingRingFrames> gRecordingRing;
 std::atomic<bool> gRecordingEnabled{false};
 std::atomic<int> gRecordingSampleRate{0};
 std::atomic<float> gLastOutputPeak{0.0f};
+std::atomic<int32_t> gRequestedOutputDeviceId{oboe::kUnspecified};
 std::mutex gLifecycleMutex;  // JNI/control path only; never taken in onAudioReady.
 
 bool isValidTrackIndex(int index) {
@@ -256,17 +257,27 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
         gStream->close();
         gStream.reset();
     }
-    oboe::AudioStreamBuilder builder;
-    builder.setDirection(oboe::Direction::Output)
-        ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
-        ->setSharingMode(oboe::SharingMode::Shared)
-        ->setFormat(oboe::AudioFormat::Float)
-        ->setChannelCount(oboe::ChannelCount::Stereo)
-        ->setUsage(oboe::Usage::Media)
-        ->setContentType(oboe::ContentType::Music)
-        ->setDataCallback(&gCallback);
+    const auto openForDevice = [](int32_t deviceId) {
+        oboe::AudioStreamBuilder builder;
+        builder.setDirection(oboe::Direction::Output)
+            ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+            ->setSharingMode(oboe::SharingMode::Shared)
+            ->setFormat(oboe::AudioFormat::Float)
+            ->setChannelCount(oboe::ChannelCount::Stereo)
+            ->setUsage(oboe::Usage::Media)
+            ->setContentType(oboe::ContentType::Music)
+            ->setDeviceId(deviceId)
+            ->setDataCallback(&gCallback);
+        return builder.openStream(gStream);
+    };
 
-    if (builder.openStream(gStream) != oboe::Result::OK || !gStream) {
+    const int32_t requestedDeviceId = gRequestedOutputDeviceId.load(std::memory_order_relaxed);
+    oboe::Result openResult = openForDevice(requestedDeviceId);
+    if (openResult != oboe::Result::OK && requestedDeviceId != oboe::kUnspecified) {
+        gStream.reset();
+        openResult = openForDevice(oboe::kUnspecified);
+    }
+    if (openResult != oboe::Result::OK || !gStream) {
         gStream.reset();
         return JNI_FALSE;
     }
@@ -304,6 +315,18 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeIsStreamRunning(JNIEnv *, jobject)
 extern "C" JNIEXPORT jfloat JNICALL
 Java_de_laermbatz_app_audio_AudioEngine_nativeGetLastOutputPeak(JNIEnv *, jobject) {
     return gLastOutputPeak.load(std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_de_laermbatz_app_audio_AudioEngine_nativeSetOutputDeviceId(JNIEnv *, jobject, jint deviceId) {
+    gRequestedOutputDeviceId.store(deviceId > 0 ? deviceId : oboe::kUnspecified,
+                                   std::memory_order_relaxed);
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_de_laermbatz_app_audio_AudioEngine_nativeGetOutputDeviceId(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(gLifecycleMutex);
+    return gStream ? gStream->getDeviceId() : oboe::kUnspecified;
 }
 
 extern "C" JNIEXPORT void JNICALL
