@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
@@ -140,6 +141,18 @@ class MainActivity : ComponentActivity() {
     private var preferredOutputDeviceId by mutableStateOf(AudioEngine.OUTPUT_DEVICE_AUTO)
     private var outputDevices by mutableStateOf(emptyList<AudioDeviceInfo>())
     private lateinit var audioManager: AudioManager
+    private var audioDeviceCallbackRegistered = false
+    private val audioDeviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            refreshOutputDevices()
+            statusMessage = describeDeviceChanges("Audioausgang verbunden", addedDevices)
+        }
+
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            refreshOutputDevices()
+            statusMessage = describeDeviceChanges("Audioausgang getrennt", removedDevices)
+        }
+    }
     private val previewPlayer = WavPreviewPlayer()
     private var previewingTrack by mutableStateOf(-1)
     private var previewRequestSerial = 0
@@ -240,21 +253,69 @@ class MainActivity : ComponentActivity() {
         AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Telefonlautsprecher"
         AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Hörer"
         AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Kabelkopfhörer"
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
-        AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> "USB-Audio"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_SPEAKER,
+        AudioDeviceInfo.TYPE_BLE_BROADCAST,
+        AudioDeviceInfo.TYPE_HEARING_AID -> device.productName.toString().ifBlank { "Bluetooth-Audio" }
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> device.productName.toString().ifBlank { "USB-Audio" }
         AudioDeviceInfo.TYPE_HDMI -> "HDMI-Audio"
         else -> device.productName.toString().ifBlank { "Audioausgang ${device.id}" }
     }
 
+    private fun describeDeviceChanges(prefix: String, devices: Array<out AudioDeviceInfo>): String {
+        val changed = devices.filter { isBluetoothOutput(it) || isUsbOutput(it) }
+            .joinToString { "${describeOutputDevice(it)} (ID ${it.id})" }
+        return if (changed.isBlank()) "$prefix erkannt; Ausgabeliste aktualisiert."
+        else "$prefix: $changed. Ausgabeliste aktualisiert."
+    }
+
+    private fun isBluetoothOutput(device: AudioDeviceInfo): Boolean = when (device.type) {
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_SPEAKER,
+        AudioDeviceInfo.TYPE_BLE_BROADCAST,
+        AudioDeviceInfo.TYPE_HEARING_AID -> true
+        else -> false
+    }
+
+    private fun isUsbOutput(device: AudioDeviceInfo): Boolean = when (device.type) {
+        AudioDeviceInfo.TYPE_USB_DEVICE,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_USB_ACCESSORY -> true
+        else -> false
+    }
+
     private fun refreshOutputDevices() {
-        val current = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).toList()
+        // getDevices(GET_DEVICES_OUTPUTS) lists currently available output ports;
+        // no Bluetooth scan or location permission is needed for audio routing.
+        val current = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .filter { it.isSink }
+            .sortedWith(compareBy<AudioDeviceInfo>({
+                when {
+                    isUsbOutput(it) -> 0
+                    isBluetoothOutput(it) -> 1
+                    else -> 2
+                }
+            }, { it.productName.toString().lowercase(Locale.ROOT) }, { it.id }))
         if (current.map { it.id to describeOutputDevice(it) } !=
             outputDevices.map { it.id to describeOutputDevice(it) }
         ) {
             outputDevices = current
         }
-        availableOutputText = current.map(::describeOutputDevice).distinct()
-            .ifEmpty { listOf("Kein Audioausgang erkannt") }.joinToString(" · ")
+        val usb = current.filter(::isUsbOutput).map(::describeOutputDevice).distinct()
+        val bluetooth = current.filter(::isBluetoothOutput).map(::describeOutputDevice).distinct()
+        val other = current.filterNot { isUsbOutput(it) || isBluetoothOutput(it) }
+            .map(::describeOutputDevice).distinct()
+        availableOutputText = buildList {
+            if (usb.isNotEmpty()) add("USB: ${usb.joinToString()}")
+            if (bluetooth.isNotEmpty()) add("Bluetooth: ${bluetooth.joinToString()}")
+            if (other.isNotEmpty()) add(other.joinToString())
+        }.ifEmpty { listOf("Kein Audioausgang erkannt") }.joinToString(" · ")
     }
 
     private fun describePreferredOutput(): String {
@@ -881,6 +942,11 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         progressHandler.removeCallbacks(progressPoller)
         progressHandler.post(progressPoller)
+        if (!audioDeviceCallbackRegistered) {
+            audioManager.registerAudioDeviceCallback(audioDeviceCallback, progressHandler)
+            audioDeviceCallbackRegistered = true
+        }
+        refreshOutputDevices()
         val filter = IntentFilter(AudioPlaybackService.ACTION_STATE_CHANGED)
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -899,6 +965,10 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         progressHandler.removeCallbacks(progressPoller)
         stopTrackPreview()
+        if (audioDeviceCallbackRegistered) {
+            audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
+            audioDeviceCallbackRegistered = false
+        }
         unregisterReceiver(stateReceiver)
         super.onStop()
     }
