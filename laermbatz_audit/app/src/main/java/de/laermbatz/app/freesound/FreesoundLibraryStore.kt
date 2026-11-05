@@ -29,10 +29,34 @@ data class FreesoundLibraryItem(
     val downloadedAtEpochMillis: Long,
     val category: FreesoundLoopCategory,
     val tags: String = "",
-    val categoryManuallySet: Boolean = false
+    val categoryManuallySet: Boolean = false,
+    val provider: String = "Freesound",
+    val sourcePack: String = ""
 )
 
 class FreesoundLibraryStore(private val directory: File) {
+    fun registerImportedPackSample(
+        file: File,
+        policy: SamplePackLicenseSummary,
+        category: FreesoundLoopCategory
+    ): FreesoundLibraryItem {
+        val wav = requireLibraryWav(file)
+        val properties = Properties().apply {
+            setProperty("name", wav.nameWithoutExtension.replace('_', ' '))
+            setProperty("username", policy.vendor)
+            setProperty("license", policy.libraryLicenseValue())
+            setProperty("provider", policy.vendor)
+            setProperty("source_pack", policy.packName)
+            setProperty("original_url", policy.productUrl)
+            setProperty("downloaded_at_epoch_ms", System.currentTimeMillis().toString())
+            setProperty("tags", wav.nameWithoutExtension)
+            setProperty("category", category.name)
+            setProperty("category_manually_set", "false")
+        }
+        writePropertiesAtomically(sidecarFor(wav), properties)
+        return readItem(wav)
+    }
+
     fun list(): List<FreesoundLibraryItem> {
         val canonicalDirectory = directory.canonicalFile
         return (directory.listFiles() ?: emptyArray())
@@ -86,7 +110,9 @@ class FreesoundLibraryStore(private val directory: File) {
             downloadedAtEpochMillis = properties.getProperty("downloaded_at_epoch_ms")?.toLongOrNull() ?: 0L,
             category = category,
             tags = properties.getProperty("tags") ?: "",
-            categoryManuallySet = properties.getProperty("category_manually_set")?.toBooleanStrictOrNull() ?: false
+            categoryManuallySet = properties.getProperty("category_manually_set")?.toBooleanStrictOrNull() ?: false,
+            provider = properties.getProperty("provider") ?: "Freesound",
+            sourcePack = properties.getProperty("source_pack") ?: ""
         )
     }
 

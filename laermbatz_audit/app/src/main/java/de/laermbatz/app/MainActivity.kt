@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -68,6 +69,10 @@ import de.laermbatz.app.freesound.FreesoundLicensePolicy
 import de.laermbatz.app.freesound.FreesoundLoopCategory
 import de.laermbatz.app.freesound.FreesoundOAuthFlow
 import de.laermbatz.app.freesound.FreesoundSound
+import de.laermbatz.app.freesound.SamplePackLicenseCatalog
+import de.laermbatz.app.freesound.SamplePackZipImporter
+import de.laermbatz.app.freesound.LOCAL_SAMPLE_PACK_LICENSE_PREFIX
+import de.laermbatz.app.freesound.ImportStatus
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -132,6 +137,10 @@ class MainActivity : ComponentActivity() {
     private var freesoundQuery by mutableStateOf("techno loop")
     private val freesoundResults = mutableStateListOf<FreesoundSound>()
     private var freesoundBusy by mutableStateOf(false)
+    private var samplePackBusy by mutableStateOf(false)
+    private var samplePackStatus by mutableStateOf("Drive-ZIPs werden ausschließlich lokal importiert; öffentliche Stream-Rechte sind nicht automatisch bestätigt.")
+    private var showSamplePackImportNotice by mutableStateOf(false)
+    private var samplePackNoticeConfirmed by mutableStateOf(false)
     private var autoSetPreparing by mutableStateOf(false)
     private var autoStartOnOpen by mutableStateOf(false)
     @Volatile private var autoSetCancelled = false
@@ -177,6 +186,10 @@ class MainActivity : ComponentActivity() {
         val index = pendingTrackIndex
         pendingTrackIndex = -1
         if (uri != null && index in tracks.indices) importWav(index, uri, bpm)
+    }
+
+    private val samplePackPicker = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) importSamplePacks(uris)
     }
 
     private val stateReceiver = object : BroadcastReceiver() {
@@ -255,6 +268,17 @@ class MainActivity : ComponentActivity() {
                                     color = Color.LightGray,
                                     style = MaterialTheme.typography.bodySmall
                                 )
+                                OutlinedButton(
+                                    onClick = {
+                                        samplePackNoticeConfirmed = false
+                                        showSamplePackImportNotice = true
+                                    },
+                                    enabled = !freesoundBusy && !samplePackBusy,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(if (samplePackBusy) "Samplepack-Import läuft …" else "ZIPs aus Drive lokal importieren")
+                                }
+                                Text(samplePackStatus, color = Color(0xFFFFD180), style = MaterialTheme.typography.bodySmall)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("Auto-Start beim Öffnen", color = Color.White)
@@ -653,6 +677,46 @@ class MainActivity : ComponentActivity() {
                                 onDismiss = { showFreesoundLibrary = false }
                             )
                         }
+                        if (showSamplePackImportNotice) {
+                            AlertDialog(
+                                onDismissRequest = {
+                                    showSamplePackImportNotice = false
+                                    samplePackNoticeConfirmed = false
+                                },
+                                title = { Text("Samplepacks nur lokal importieren") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(SamplePackLicenseCatalog.legalImportNotice())
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Checkbox(
+                                                checked = samplePackNoticeConfirmed,
+                                                onCheckedChange = { samplePackNoticeConfirmed = it }
+                                            )
+                                            Text(
+                                                "Ich habe die Anbieterbedingungen geprüft und darf diese Dateien lokal nutzen; rohe WAVs gebe ich nicht weiter.",
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(
+                                        enabled = samplePackNoticeConfirmed,
+                                        onClick = {
+                                            showSamplePackImportNotice = false
+                                            samplePackNoticeConfirmed = false
+                                            samplePackPicker.launch(arrayOf("application/zip"))
+                                        }
+                                    ) { Text("ZIPs auswählen") }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = {
+                                        showSamplePackImportNotice = false
+                                        samplePackNoticeConfirmed = false
+                                    }) { Text("Abbrechen") }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -947,7 +1011,7 @@ class MainActivity : ComponentActivity() {
                     ?.filter { it.isFile && it.extension.equals("wav", ignoreCase = true) }
                     ?.sumOf { it.length() } ?: 0L
                 if (currentBytes + incomingBytes > MAX_FREESOUND_LIBRARY_BYTES) {
-                    throw IOException("Freesound-Lokalspeicher ist auf 256 MiB begrenzt; entferne zuerst nicht benötigte Sounds.")
+                    throw IOException("Die lokale Loop-Bibliothek ist auf 2,5 GiB begrenzt; entferne zuerst nicht benötigte WAVs.")
                 }
 
                 val currentCredentials = freesoundCredentialStore.load()
@@ -1056,6 +1120,104 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun importSamplePacks(uris: List<Uri>) {
+        if (uris.isEmpty() || freesoundBusy || samplePackBusy || autoSetPreparing) return
+        if (uris.size > MAX_SAMPLE_PACK_ARCHIVES) {
+            samplePackStatus = "Pro Import sind höchstens $MAX_SAMPLE_PACK_ARCHIVES ZIP-Archive erlaubt."
+            return
+        }
+        samplePackBusy = true
+        freesoundBusy = true
+        samplePackStatus = "${uris.size} ausgewählte ZIP-Datei(en) werden geprüft …"
+        val destination = File(filesDir, FREESOUND_LIBRARY_DIR)
+
+        ioExecutor.execute {
+            var importedCount = 0
+            var duplicateCount = 0
+            var unknownCount = 0
+            var failedMetadataCount = 0
+            var batchDecompressedBytes = 0L
+            var batchLimitReported = false
+            val warnings = mutableListOf<String>()
+
+            uris.forEachIndexed { position, uri ->
+                if (batchDecompressedBytes >= MAX_SAMPLE_PACK_BATCH_DECOMPRESSED_BYTES) {
+                    if (!batchLimitReported) {
+                        warnings += "Kumulatives 4-GiB-Dekompressionslimit erreicht; weitere ZIPs nicht geöffnet"
+                        batchLimitReported = true
+                    }
+                    return@forEachIndexed
+                }
+                runOnUiThread {
+                    if (!isFinishing && !isDestroyed) {
+                        samplePackStatus = "ZIP ${position + 1}/${uris.size}: Datei- und Lizenzquelle wird geprüft …"
+                    }
+                }
+                val archiveName = runCatching { queryDisplayName(uri) }.getOrDefault("unbekannt.zip")
+                val policy = SamplePackLicenseCatalog.forArchiveName(archiveName)
+                if (policy == null) {
+                    unknownCount++
+                    warnings += "$archiveName: kein geprüfter Pack-Eintrag; übersprungen"
+                    return@forEachIndexed
+                }
+
+                val result = try {
+                    val archiveStream = contentResolver.openInputStream(uri)
+                        ?: throw IOException("Android konnte das ausgewählte ZIP nicht öffnen")
+                    val remainingBatchBudget = MAX_SAMPLE_PACK_BATCH_DECOMPRESSED_BYTES - batchDecompressedBytes
+                    SamplePackZipImporter(
+                        inputStream = archiveStream,
+                        archiveDisplayName = archiveName,
+                        destinationDirectory = destination,
+                        maxTotalDecompressedBytes = remainingBatchBudget
+                    ).import()
+                } catch (error: Exception) {
+                    warnings += "$archiveName: ${error.message ?: "Datei konnte nicht gelesen werden"}"
+                    return@forEachIndexed
+                }
+
+                batchDecompressedBytes =
+                    (batchDecompressedBytes + result.decompressedBytesRead).coerceAtMost(MAX_SAMPLE_PACK_BATCH_DECOMPRESSED_BYTES)
+                duplicateCount += result.duplicateCount
+                if (result.status != ImportStatus.COMPLETE) {
+                    warnings += "$archiveName: ${result.status}; ${result.importedFiles.size} WAV(s) eventuell bereits lokal übernommen"
+                }
+                result.importedFiles.forEach { imported ->
+                    val category = FreesoundAutoCategorizer.inferCategory(imported.name, policy.packName)
+                        ?: FreesoundLoopCategory.UNCATEGORIZED
+                    try {
+                        freesoundLibraryStore.registerImportedPackSample(imported.file, policy, category)
+                        importedCount++
+                    } catch (error: Exception) {
+                        failedMetadataCount++
+                        warnings += "${imported.name}: Herkunft konnte nicht gespeichert werden; Datei bleibt gesperrt"
+                    }
+                }
+            }
+
+            val finalLibrary = runCatching { freesoundLibraryStore.list() }.getOrElse {
+                warnings += "Lokale Bibliothek konnte nicht neu geladen werden"
+                emptyList()
+            }
+            val finalStatus = buildString {
+                append("Import beendet: ").append(importedCount).append(" WAV(s) lokal hinzugefügt; ")
+                append(duplicateCount).append(" Duplikat(e) übersprungen.")
+                if (unknownCount > 0) append(" ").append(unknownCount).append(" unbekannte ZIP(s) nicht importiert.")
+                if (failedMetadataCount > 0) append(" ").append(failedMetadataCount).append(" Datei(en) ohne Lizenzmetadaten blockiert.")
+                if (warnings.isNotEmpty()) append(" Details: ").append(warnings.take(4).joinToString("; "))
+                append(" Pack-WAVs und Archive werden nicht in APK/GitHub/Website kopiert.")
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                freesoundLibraryItems.clear()
+                freesoundLibraryItems.addAll(finalLibrary)
+                samplePackStatus = finalStatus
+                samplePackBusy = false
+                freesoundBusy = false
+            }
+        }
+    }
+
     private fun changeFreesoundCategory(item: FreesoundLibraryItem, category: FreesoundLoopCategory) {
         ioExecutor.execute {
             try {
@@ -1101,11 +1263,7 @@ class MainActivity : ComponentActivity() {
     private fun loadFreesoundLibraryItem(item: FreesoundLibraryItem) {
         val index = selectedFreesoundTrack
         if (index !in tracks.indices || tracks[index].isLoading || freesoundBusy) return
-        val sourceInfo = if (item.license == "Attribution") {
-            "CC BY-Namensnennung: ${item.title} · ${item.username} · ${item.originalUrl}"
-        } else {
-            "${item.license.ifBlank { "Freesound" }} · ${item.title} · ${item.username} · ${item.originalUrl}"
-        }
+        val sourceInfo = attributionFor(item)
         showFreesoundLibrary = false
         importWav(
             index,
@@ -1315,12 +1473,13 @@ class MainActivity : ComponentActivity() {
         return current.accessToken
     }
 
-    private fun attributionFor(item: FreesoundLibraryItem): String =
-        if (item.license == FreesoundLicensePolicy.ATTRIBUTION) {
+    private fun attributionFor(item: FreesoundLibraryItem): String = when {
+        SamplePackLicenseCatalog.isLocalPackLicense(item.license) ->
+            "Samplepack ${item.sourcePack} (${item.provider}): ${item.license.removePrefix(LOCAL_SAMPLE_PACK_LICENSE_PREFIX)} Quelle: ${item.originalUrl}"
+        item.license == FreesoundLicensePolicy.ATTRIBUTION ->
             "CC BY-Namensnennung: ${item.title} · ${item.username} · ${item.originalUrl}"
-        } else {
-            "${item.license.ifBlank { "Freesound" }} · ${item.title} · ${item.username} · ${item.originalUrl}"
-        }
+        else -> "${item.license.ifBlank { "Freesound" }} · ${item.title} · ${item.username} · ${item.originalUrl}"
+    }
 
     private fun loadAutoSetSequentially(selections: List<AutoSetSelection>, position: Int) {
         if (autoSetCancelled) {
@@ -1656,8 +1815,10 @@ class MainActivity : ComponentActivity() {
         private const val KEY_FREESOUND_PENDING_STATE = "freesound_pending_oauth_state"
         private const val PREF_TRACK_CONTROLS = "mixer_track_controls"
         private const val FREESOUND_LIBRARY_DIR = "freesound_library"
+        private const val MAX_SAMPLE_PACK_ARCHIVES = 8
+        private const val MAX_SAMPLE_PACK_BATCH_DECOMPRESSED_BYTES = 4L * 1024L * 1024L * 1024L
         private const val MAX_FREESOUND_FILE_BYTES = 32L * 1024L * 1024L
-        private const val MAX_FREESOUND_LIBRARY_BYTES = 256L * 1024L * 1024L
+        private const val MAX_FREESOUND_LIBRARY_BYTES = 2_684_354_560L
         private const val TOKEN_REFRESH_SKEW_MILLIS = 60_000L
         private const val DEFAULT_TOKEN_LIFETIME_MILLIS = 24L * 60L * 60L * 1_000L
         private val AUTO_SET_CATEGORIES = listOf(

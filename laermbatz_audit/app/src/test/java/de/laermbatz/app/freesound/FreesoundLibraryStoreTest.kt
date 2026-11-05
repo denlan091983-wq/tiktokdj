@@ -85,6 +85,25 @@ class FreesoundLibraryStoreTest {
     }
 
     @Test
+    fun registersImportedPackWithSourcePolicyAndAutomaticCategory() {
+        val wav = wav("KNALWERK_KICK.wav")
+        val policy = requireNotNull(
+            SamplePackLicenseCatalog.forArchiveName("FREE_HARD_TECHNO_SAMPLE_PACK_-_KNALWERK.zip")
+        )
+
+        val imported = store.registerImportedPackSample(wav, policy, FreesoundLoopCategory.KICK)
+        val reloaded = store.list().single()
+
+        assertEquals("KNALWERK", imported.provider)
+        assertEquals("Free Hard Techno Sample Pack", imported.sourcePack)
+        assertEquals("https://knalwerktechno.com/products/free-hard-industrial-techno-sample-pack", imported.originalUrl)
+        assertTrue(SamplePackLicenseCatalog.isLocalPackLicense(imported.license))
+        assertEquals(FreesoundLoopCategory.KICK, reloaded.category)
+        assertFalse(reloaded.categoryManuallySet)
+        assertEquals(imported.sourcePack, reloaded.sourcePack)
+    }
+
+    @Test
     fun categoryAndDeleteRejectFilesOutsideTheLibrary() {
         val outside = File(directory.parentFile, "outside-library.wav")
         outside.writeBytes(byteArrayOf(1, 2, 3))

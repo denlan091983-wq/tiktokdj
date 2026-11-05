@@ -50,7 +50,7 @@ fun FreesoundLibraryDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    "Nur lokal gespeicherte Freesound-WAVs. Kategorie und Herkunft bleiben auf diesem Gerät erhalten.",
+                    "Nur lokal gespeicherte Freesound- und Pack-WAVs. ZIPs und rohe Samples werden nicht mit der App weitergegeben.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Column {
@@ -81,7 +81,7 @@ fun FreesoundLibraryDialog(
                 }
                 if (visibleItems.isEmpty()) {
                     Text(
-                        if (items.isEmpty()) "Noch keine Freesound-Loops heruntergeladen." else "In dieser Kategorie sind keine Loops.",
+                        if (items.isEmpty()) "Noch keine Loops heruntergeladen oder lokal importiert." else "In dieser Kategorie sind keine Loops.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -134,15 +134,24 @@ private fun LibraryItemCard(
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
             Text(item.title, style = MaterialTheme.typography.titleSmall)
+            val isLocalPack = SamplePackLicenseCatalog.isLocalPackLicense(item.license)
             Text(
-                "${item.username.ifBlank { "Uploader unbekannt" }} · ${item.license.ifBlank { "Lizenz unbekannt" }}",
+                if (isLocalPack) "${item.provider} · ${item.sourcePack}"
+                else "${item.username.ifBlank { "Uploader unbekannt" }} · ${item.license.ifBlank { "Lizenz unbekannt" }}",
                 style = MaterialTheme.typography.bodySmall
             )
             Text("Kategorie: ${item.category.label}", style = MaterialTheme.typography.bodySmall)
+            if (isLocalPack) {
+                Text(
+                    item.license.removePrefix(LOCAL_SAMPLE_PACK_LICENSE_PREFIX),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             if (item.originalUrl.isNotBlank()) {
                 Text(item.originalUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
-            val licenseVerified = FreesoundLicensePolicy.isAllowed(
+            val licenseVerified = isLocalPack || FreesoundLicensePolicy.isAllowed(
                 item.license,
                 "wav",
                 allowAttribution = true

@@ -12,15 +12,15 @@ Das Skript führt den hostseitigen C++17-DSP-/Autopilot-Smoke-Test, danach `:app
 
 ## Letzter verifizierter Audit-Build
 
-Am 4. November 2026 lief `./cloud-build.sh` auf dem Quellstand mit lokaler Masteraufnahme mit **BUILD SUCCESSFUL** durch. Es bestanden **42 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests. Die nativen C++17-Prüfungen für den aufnahmefähigen SPSC-Ringbuffer und die DSP-/Autopilot-Kette bestanden; der native DSP-Smoke umfasst **11 DSP-/Arrangementprüfungen**, darunter eine Regression für extreme Float-, NaN- und Infinity-Eingaben. Diese hostseitigen Prüfungen sind keine Android-Instrumentierungs- oder Gerätetests.
+Am 5. November 2026 lief `./cloud-build.sh` nach Integration des lokalen Drive-Samplepack-Imports mit **BUILD SUCCESSFUL** durch. Es bestanden **58 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests. Dazu gehören Freesound-Lizenzfilter und Auto-Set-Fallbacks, Pack-Katalog/Store, ZIP-Dekompressions- und WAV-Importgrenzen sowie die bestehenden Aufnahme-/Audio-Tests. Die nativen C++17-Prüfungen für den SPSC-Ringbuffer und die DSP-/Autopilot-Kette bestanden; der native DSP-Smoke umfasst **11 DSP-/Arrangementprüfungen**, darunter eine Regression für extreme Float-, NaN- und Infinity-Eingaben. Diese hostseitigen Prüfungen sind keine Android-Instrumentierungs- oder Gerätetests.
 
-Die APK ist `de.laermbatz.app`, Version `0.1.0` / Code `1`, `minSdk 27`, `targetSdk 34` und enthält ausschließlich `arm64-v8a`. `apksigner verify` war erfolgreich; die Datei ist debug-signiert mit APK Signature Scheme v2. Die Dateigröße beträgt **10.858.099 Byte**. SHA-256:
+Die APK ist `de.laermbatz.app`, Version `0.1.0` / Code `1`, `minSdk 27`, `targetSdk 34` und enthält ausschließlich `arm64-v8a`. `apksigner verify` war erfolgreich; die Datei ist debug-signiert mit APK Signature Scheme v2. Die Dateigröße beträgt **10.879.563 Byte**. SHA-256:
 
-`e785ef29c9c2133720815f34e1bcc679904ef1de9360a6fff8211f4973b1c0a6`
+`bb49812c1f029cb3f6250aa2f7d46e2468aaf584f25bf5d732cec4d4c1d7e6ad`
 
-Der verbindliche Buildpfad ist [`app/build/outputs/apk/debug/app-debug.apk`](app/build/outputs/apk/debug/app-debug.apk); die geprüfte, separat bereitgestellte Repositorykopie liegt unter [`../artifacts/Laermbatz-debug.apk`](../artifacts/Laermbatz-debug.apk). Die SHA-256-Prüfsumme steht in `../artifacts/SHA256SUMS.txt`.
+Der verbindliche Buildpfad ist [`app/build/outputs/apk/debug/app-debug.apk`](app/build/outputs/apk/debug/app-debug.apk); die herunterladbare Kopie im Monorepo liegt unter [`artifacts/Laermbatz-debug.apk`](../artifacts/Laermbatz-debug.apk), mit Prüfsumme in [`artifacts/SHA256SUMS.txt`](../artifacts/SHA256SUMS.txt).
 
-Das bereinigte Gesamt-Quellarchiv wurde separat erzeugt. Dieses Repository enthält die Android-, Webradio- und Python-Quellen samt Tests/Dokumentation direkt; Zugangsdaten, persönliche Aufnahmen, Datenbankexporte, Caches und Buildausgaben sind ausgeschlossen.
+Die vollständigen Android-, Webradio- und Python-Quellen sowie die geprüfte APK liegen einzeln in diesem Repository; ein bereinigtes Gesamt-Quell- und APK-Archiv wird zusätzlich separat bereitgestellt. Drive-ZIP-Archive und rohe Loop-WAVs sind wegen der Rohdaten-Weitergaberechte nicht enthalten; Details stehen in [SAMPLEPACK_LICENSE_NOTES.md](SAMPLEPACK_LICENSE_NOTES.md). Secrets, persönliche Aufnahmen, Datenbankexporte, `node_modules`, Gradle-/CMake-Caches und kompilierten Buildausgaben sind ausgeschlossen.
 
 ## Nicht abgenommen
 

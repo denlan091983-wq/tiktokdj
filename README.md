@@ -4,7 +4,7 @@ Dieses private Repository bündelt die aktuellen Projektquellen für den **LÄRM
 
 ## Inhalt
 
-- [`laermbatz_audit/`](laermbatz_audit/) — Android-App (Kotlin/Jetpack Compose und nativer Oboe/C++-Audiomixer), Tests, Buildskripte, Audit-Roadmap und offizielle Freesound-API-Notiz.
+- [`laermbatz_audit/`](laermbatz_audit/) — Android-App (Kotlin/Jetpack Compose und nativer Oboe/C++-Audiomixer), Tests, Buildskripte, Audit-Roadmap sowie Freesound-API- und Samplepack-Lizenznotizen. Die App unterstützt Freesound-Fallbacks und einen nur lokal ausführbaren Import von Nutzer-ZIPs mit Anbieter-Metadaten.
 - [`larmradio/`](larmradio/) — React-/Express-/tRPC-Website mit Managed-MySQL-Schema, Studio-Upload, einzeln bestätigter Veröffentlichung, Audioarchiv und statusgeprüften Stream-/Download-Proxys.
 - [`LARMBATZ_freesound_auto_download.py`](LARMBATZ_freesound_auto_download.py) — CLI zur Freesound-API-/lokalen Loopverwaltung, Analyse und SQLite-Indizierung.
 - [`artifacts/Laermbatz-debug.apk`](artifacts/Laermbatz-debug.apk) — geprüfter ARM64-Debug-Build für privaten Sideload-Test; SHA-256 steht in [`artifacts/SHA256SUMS.txt`](artifacts/SHA256SUMS.txt).
@@ -19,7 +19,7 @@ cd laermbatz_audit
 ./gradlew :app:assembleDebug
 ```
 
-Der mitgelieferte Debug-Build ist Version `0.1.0`, `minSdk 27`, `targetSdk 34`, `arm64-v8a` und debug-signiert. Er ist **nicht Play-Store-releasefähig**; vor einem Store-Release fehlen unter anderem Target-API-36-Migration und Release-Signierung. Die `cloud-build.sh` enthält den Buildablauf der bisherigen Cloud-Umgebung; lokale Pfade gegebenenfalls anpassen.
+Der mitgelieferte Debug-Build ist Version `0.1.0`, `minSdk 27`, `targetSdk 34`, `arm64-v8a` und debug-signiert. Er ist **nicht Play-Store-releasefähig**; vor einem Store-Release fehlen unter anderem Target-API-36-Migration und Release-Signierung. Die `cloud-build.sh` enthält den Buildablauf der bisherigen Cloud-Umgebung; lokale Pfade gegebenenfalls anpassen. Drive-ZIPs und rohe Sample-WAVs sind nicht im Repository enthalten; sie dürfen nicht ungeprüft in APK/GitHub weiterverteilt werden. Der lokale App-Import und die geprüften Rechtehinweise stehen in [`SAMPLEPACK_LICENSE_NOTES.md`](laermbatz_audit/SAMPLEPACK_LICENSE_NOTES.md).
 
 ## Radio-Website
 
@@ -35,4 +35,8 @@ Das Python-Werkzeug und die App verlangen eigene Freesound-Zugangsdaten, soweit 
 
 ## Prüfnachweis
 
-Der zuletzt geprüfte Android-Build bestand 42 JVM-Unit-Tests sowie den nativen SPSC-Ringbuffer-Smoke-Test und 11 DSP-/Arrangement-Smokes. TypeScript-Check, 12 Web-Tests, Produktionsbuild, Health-Route und Seiten-Routenmanifest der Website waren erfolgreich. Automatisierte Prüfungen ersetzen weder Android-Gerätetests noch die noch ausstehende öffentliche Website-Veröffentlichung.
+Der Vorabstand vom 4. November 2026 bestand 42 JVM-Unit-Tests sowie den nativen SPSC-Ringbuffer-Smoke-Test und 11 DSP-/Arrangement-Smokes. TypeScript-Check, 12 Web-Tests, Produktionsbuild, Health-Route und Seiten-Routenmanifest der Website waren erfolgreich. Automatisierte Prüfungen ersetzen weder Android-Gerätetests noch die noch ausstehende öffentliche Website-Veröffentlichung.
+
+## Aktueller Android-Build (5. November 2026)
+
+Der Stand nach dem lokalen Samplepack-Import besteht 58 JVM-Unit-Tests, den nativen SPSC-Ringbuffer-Smoke und 11 DSP-/Arrangement-Smokes. Die Debug-APK ist debug-signiert und für ARM64; SHA-256 und weitere Paketdaten stehen in [`laermbatz_audit/CLOUD_BUILD.md`](laermbatz_audit/CLOUD_BUILD.md) sowie [`artifacts/SHA256SUMS.txt`](artifacts/SHA256SUMS.txt). Ein physischer Android-Gerätetest steht noch aus.
