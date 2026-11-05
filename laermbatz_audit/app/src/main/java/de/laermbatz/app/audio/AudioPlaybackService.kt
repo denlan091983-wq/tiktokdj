@@ -28,6 +28,26 @@ class AudioPlaybackService : Service() {
     private var recorder: LocalMasterMixRecorder? = null
 
     private val stopRunnable = Runnable { if (stopping) finishStop() }
+    private val streamWatchdog = object : Runnable {
+        override fun run() {
+            if (!streamStarted || stopping) return
+            if (!AudioEngine.isStreamRunning()) {
+                streamStarted = false
+                recorder?.stop()
+                if (hasAudioFocus && AudioEngine.start()) {
+                    streamStarted = true
+                    publishState(STATE_PLAYING, "Audiostream nach Unterbrechung wiederhergestellt.")
+                } else {
+                    publishState(STATE_ERROR, "Audiostream ist ausgefallen. Mixer bitte erneut starten.")
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    abandonFocus()
+                    stopSelf()
+                    return
+                }
+            }
+            handler.postDelayed(this, STREAM_WATCHDOG_MILLIS)
+        }
+    }
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> {
@@ -71,10 +91,12 @@ class AudioPlaybackService : Service() {
         handler.removeCallbacks(stopRunnable)
         stopping = false
         startForeground(NOTIFICATION_ID, buildNotification())
-        if (streamStarted) {
+        if (streamStarted && AudioEngine.isStreamRunning()) {
             publishState(STATE_PLAYING, "Audio-Mixer läuft.")
+            scheduleStreamWatchdog()
             return
         }
+        streamStarted = false
         if (AudioEngine.loadedTrackCount() == 0) {
             publishState(STATE_ERROR, "Importiere zuerst mindestens eine WAV-Spur.")
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -97,6 +119,7 @@ class AudioPlaybackService : Service() {
         }
         streamStarted = true
         publishState(STATE_PLAYING, "Autopilot-Mixer läuft.")
+        scheduleStreamWatchdog()
     }
 
     private fun resumeAfterFocusGain() {
@@ -111,11 +134,16 @@ class AudioPlaybackService : Service() {
         }
         streamStarted = true
         publishState(STATE_PLAYING, "Audio-Fokus zurück – Mixer läuft.")
+        scheduleStreamWatchdog()
     }
 
     private fun startRecording() {
-        if (!streamStarted || stopping) {
-            publishRecording(false, 0, "Aufnahme benötigt einen laufenden Mixer.")
+        if (stopping) {
+            publishRecording(false, 0, "Mixer wird gerade gestoppt; Aufnahme nicht gestartet.")
+            return
+        }
+        if (!ensurePlaybackStream()) {
+            publishRecording(false, 0, "Kein aktiver Stereo-Audiostream. Mixer bitte stoppen und erneut starten.")
             return
         }
         if (recorder?.isActive == true) return
@@ -154,6 +182,7 @@ class AudioPlaybackService : Service() {
     private fun stopPlayback(message: String = "Wiedergabe wird weich ausgeblendet …") {
         if (stopping) return
         stopping = true
+        handler.removeCallbacks(streamWatchdog)
         handler.removeCallbacks(stopRunnable)
         if (streamStarted) {
             AudioEngine.stop()
@@ -165,6 +194,7 @@ class AudioPlaybackService : Service() {
     }
 
     private fun finishStop() {
+        handler.removeCallbacks(streamWatchdog)
         if (recorder?.isActive == true) {
             pendingPlaybackStop = true
             recorder?.stop()
@@ -205,6 +235,25 @@ class AudioPlaybackService : Service() {
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         focusRequest = null
         hasAudioFocus = false
+    }
+
+    private fun ensurePlaybackStream(): Boolean {
+        if (AudioEngine.isStreamRunning()) {
+            streamStarted = true
+            scheduleStreamWatchdog()
+            return true
+        }
+        streamStarted = false
+        if (!requestFocus() || !AudioEngine.start()) return false
+        streamStarted = true
+        publishState(STATE_PLAYING, "Audiostream für Aufnahme neu gestartet.")
+        scheduleStreamWatchdog()
+        return true
+    }
+
+    private fun scheduleStreamWatchdog() {
+        handler.removeCallbacks(streamWatchdog)
+        if (streamStarted && !stopping) handler.postDelayed(streamWatchdog, STREAM_WATCHDOG_MILLIS)
     }
 
     private fun buildNotification(): Notification {
@@ -308,5 +357,6 @@ class AudioPlaybackService : Service() {
         private const val CHANNEL_ID = "laermbatz_playback"
         private const val NOTIFICATION_ID = 1001
         private const val RAMP_MILLIS = 30L
+        private const val STREAM_WATCHDOG_MILLIS = 750L
     }
 }

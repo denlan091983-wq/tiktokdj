@@ -1,1 +1,1 @@
-bb49812c1f029cb3f6250aa2f7d46e2468aaf584f25bf5d732cec4d4c1d7e6ad  Laermbatz-debug.apk
+9171b267c9054bde0a43a40d26d7cdef1244c3ba3059ac0d17d9471e490fbbaf  Laermbatz-debug.apk

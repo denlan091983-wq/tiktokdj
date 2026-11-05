@@ -39,4 +39,4 @@ Der Vorabstand vom 4. November 2026 bestand 42 JVM-Unit-Tests sowie den nativen 
 
 ## Aktueller Android-Build (5. November 2026)
 
-Der Stand nach dem lokalen Samplepack-Import besteht 58 JVM-Unit-Tests, den nativen SPSC-Ringbuffer-Smoke und 11 DSP-/Arrangement-Smokes. Die Debug-APK ist debug-signiert und für ARM64; SHA-256 und weitere Paketdaten stehen in [`laermbatz_audit/CLOUD_BUILD.md`](laermbatz_audit/CLOUD_BUILD.md) sowie [`artifacts/SHA256SUMS.txt`](artifacts/SHA256SUMS.txt). Ein physischer Android-Gerätetest steht noch aus.
+Der aktuelle Stand nach der Oboe-Streamstatus-/Wiederanlaufkorrektur besteht 58 JVM-Unit-Tests, den nativen SPSC-Ringbuffer-Smoke und 11 DSP-/Arrangement-Smokes. Die Debug-APK ist debug-signiert und für ARM64; SHA-256 und weitere Paketdaten stehen in [`laermbatz_audit/CLOUD_BUILD.md`](laermbatz_audit/CLOUD_BUILD.md) sowie [`artifacts/SHA256SUMS.txt`](artifacts/SHA256SUMS.txt). Ein physischer Android-Gerätetest steht noch aus.

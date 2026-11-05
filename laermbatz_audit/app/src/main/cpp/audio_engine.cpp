@@ -247,7 +247,11 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
         return JNI_TRUE;
     }
 
-    gStream.reset();
+    gCallback.playing.store(false, std::memory_order_relaxed);
+    if (gStream) {
+        gStream->close();
+        gStream.reset();
+    }
     oboe::AudioStreamBuilder builder;
     builder.setDirection(oboe::Direction::Output)
         ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -283,6 +287,15 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStop(JNIEnv *, jobject) {
     gCallback.playing.store(false, std::memory_order_relaxed);
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_de_laermbatz_app_audio_AudioEngine_nativeIsStreamRunning(JNIEnv *, jobject) {
+    std::lock_guard<std::mutex> lock(gLifecycleMutex);
+    return gStream && gStream->getState() == oboe::StreamState::Started &&
+                   gCallback.playing.load(std::memory_order_relaxed)
+               ? JNI_TRUE
+               : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_de_laermbatz_app_audio_AudioEngine_nativeRelease(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(gLifecycleMutex);
@@ -299,7 +312,7 @@ extern "C" JNIEXPORT jint JNICALL
 Java_de_laermbatz_app_audio_AudioEngine_nativeStartRecording(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(gLifecycleMutex);
     if (!gStream || gStream->getState() != oboe::StreamState::Started ||
-        gStream->getChannelCount() != 2) return 0;
+        gStream->getChannelCount() != 2 || !gCallback.playing.load(std::memory_order_relaxed)) return 0;
     gRecordingEnabled.store(false, std::memory_order_release);
     waitForCallbacksToDrain();
     gRecordingRing.reset();
@@ -337,7 +350,8 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeRecordingDroppedFrames(JNIEnv *, j
 extern "C" JNIEXPORT jint JNICALL
 Java_de_laermbatz_app_audio_AudioEngine_nativeRecordingSampleRate(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(gLifecycleMutex);
-    if (gStream && gStream->getState() == oboe::StreamState::Started) {
+    if (gStream && gStream->getState() == oboe::StreamState::Started &&
+        gCallback.playing.load(std::memory_order_relaxed)) {
         return gStream->getSampleRate();
     }
     return gRecordingSampleRate.load(std::memory_order_relaxed);

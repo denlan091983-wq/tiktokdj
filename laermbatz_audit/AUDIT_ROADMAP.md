@@ -17,7 +17,7 @@ Widersprüchliche Einstiegsdokumente wurden aktualisiert. Der TikTok-Status erkl
 
 ## Lokale Ein-Stunden-Aufnahme
 
-Der Oboe-Callback kopiert den finalen Stereo-Master nach Mixer-/Effektkette in einen vorallokierten, atomaren SPSC-Ring ohne Sperre, JNI-Aufruf oder Speicherallokation im Audiothread. Ein separater Service-Worker wandelt die Samples mit Android `MediaCodec` in AAC-LC mit 192 kbit/s um und finalisiert einen M4A-Container per `MediaMuxer`. Die Aufnahme wird nach spätestens 3600 Sekunden gestoppt, lokal in `Music/LÄRMBATZ` abgelegt und erst danach im MediaStore sichtbar gemacht. Fehler und Pufferüberläufe brechen ab, statt eine unvollständige Datei als fertig zu markieren. Implementierung: `app/src/main/cpp/master_recording_ring.h`, `app/src/main/java/de/laermbatz/app/audio/LocalMasterMixRecorder.kt` und `AudioPlaybackService.kt`.
+Der Oboe-Callback kopiert den finalen Stereo-Master nach Mixer-/Effektkette in einen vorallokierten, atomaren SPSC-Ring ohne Sperre, JNI-Aufruf oder Speicherallokation im Audiothread. Ein separater Service-Worker wandelt die Samples mit Android `MediaCodec` in AAC-LC mit 192 kbit/s um und finalisiert einen M4A-Container per `MediaMuxer`. Die Aufnahme wird nach spätestens 3600 Sekunden gestoppt, lokal in `Music/LÄRMBATZ` abgelegt und erst danach im MediaStore sichtbar gemacht. Fehler und Pufferüberläufe brechen ab, statt eine unvollständige Datei als fertig zu markieren. Nach dem gemeldeten Streamfehler prüft der Service nun den tatsächlichen nativen Oboe-Status und versucht alle 750 ms einen kontrollierten Wiederanlauf; die Aufnahme startet bei fehlendem Stream nicht mehr unter veraltetem „Mixer läuft“-Status. Diese Korrektur ist gebaut, aber noch nicht auf einem Gerät mit Audio-Routenwechsel verifiziert. Implementierung: `app/src/main/cpp/master_recording_ring.h`, `app/src/main/java/de/laermbatz/app/audio/LocalMasterMixRecorder.kt` und `AudioPlaybackService.kt`.
 
 ## Import der Drive-Samplepacks
 
@@ -25,7 +25,7 @@ Der lokale Android-Dateidialog akzeptiert bis zu acht ausgewählte ZIPs pro Vorg
 
 ## Verifizierter Build
 
-Der abschließende Aufruf `./cloud-build.sh` war erfolgreich. Es bestanden **58 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests sowie der native SPSC-Ringbuffer-Smoke und **11 DSP-/Arrangement-Smokes**, darunter der Float-/NaN-Schutztest. Der APK-Hash und die v2-Signatur wurden geprüft. Die APK ist `de.laermbatz.app` Version `0.1.0`, `minSdk 27`, `targetSdk 34`, nur `arm64-v8a`, debug-signiert und 10.879.563 Byte groß. SHA-256: `bb49812c1f029cb3f6250aa2f7d46e2468aaf584f25bf5d732cec4d4c1d7e6ad`.
+Der abschließende Aufruf `./cloud-build.sh` nach der Oboe-Streamstatus-/Wiederanlaufkorrektur war erfolgreich. Es bestanden **58 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests sowie der native SPSC-Ringbuffer-Smoke und **11 DSP-/Arrangement-Smokes**, darunter der Float-/NaN-Schutztest. Der APK-Hash und die v2-Signatur wurden geprüft. Die APK ist `de.laermbatz.app` Version `0.1.0`, `minSdk 27`, `targetSdk 34`, nur `arm64-v8a`, debug-signiert und 10.808.869 Byte groß. SHA-256: `9171b267c9054bde0a43a40d26d7cdef1244c3ba3059ac0d17d9471e490fbbaf`.
 
 Die [geprüfte Debug-APK](../artifacts/Laermbatz-debug.apk) ist zum privaten Sideloading auf kompatiblen ARM64-Geräten geeignet. Sie ist nicht release-signiert. Die genaue Buildprüfung steht in [CLOUD_BUILD.md](CLOUD_BUILD.md); der Implementierungsstand des Mixers steht in [MIXER_MVP_STATUS.md](MIXER_MVP_STATUS.md).
 

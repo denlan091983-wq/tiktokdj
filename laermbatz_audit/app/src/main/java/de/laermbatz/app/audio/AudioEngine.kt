@@ -9,6 +9,7 @@ object AudioEngine {
     fun start(): Boolean = nativeStart()
     fun stop() = nativeStop()
     fun release() = nativeRelease()
+    fun isStreamRunning(): Boolean = nativeIsStreamRunning()
     fun loadTrack(index: Int, wav: DecodedWav, bars: Int): Boolean =
         nativeLoadTrack(index, wav.samples, wav.sampleRate, wav.channels, bars)
     fun clearTrack(index: Int): Boolean = nativeClearTrack(index)
@@ -37,6 +38,7 @@ object AudioEngine {
     private external fun nativeStart(): Boolean
     private external fun nativeStop()
     private external fun nativeRelease()
+    private external fun nativeIsStreamRunning(): Boolean
     private external fun nativeLoadTrack(
         index: Int,
         samples: FloatArray,
