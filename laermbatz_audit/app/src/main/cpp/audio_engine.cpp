@@ -71,6 +71,7 @@ std::atomic<int> gRecordingSampleRate{0};
 std::atomic<float> gLastOutputPeak{0.0f};
 std::atomic<int32_t> gRequestedOutputDeviceId{oboe::kUnspecified};
 std::mutex gLifecycleMutex;  // JNI/control path only; never taken in onAudioReady.
+int32_t gOpenedOutputRequestId = oboe::kUnspecified;  // protected by gLifecycleMutex
 
 bool isValidTrackIndex(int index) {
     return index >= 0 && index < kTrackCount;
@@ -247,16 +248,20 @@ extern "C" JNIEXPORT jboolean JNICALL
 Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
     std::lock_guard<std::mutex> lock(gLifecycleMutex);
     if (gLoadedTrackCount.load(std::memory_order_relaxed) == 0) return JNI_FALSE;
-    if (gStream && gStream->getState() == oboe::StreamState::Started) {
+    const int32_t requestedDeviceId = gRequestedOutputDeviceId.load(std::memory_order_relaxed);
+    if (gStream && gStream->getState() == oboe::StreamState::Started &&
+        gOpenedOutputRequestId == requestedDeviceId) {
         gCallback.playing.store(true, std::memory_order_relaxed);
         return JNI_TRUE;
     }
 
     gCallback.playing.store(false, std::memory_order_relaxed);
     if (gStream) {
+        if (gStream->getState() == oboe::StreamState::Started) gStream->requestStop();
         gStream->close();
         gStream.reset();
     }
+    gOpenedOutputRequestId = oboe::kUnspecified;
     const auto openForDevice = [](int32_t deviceId) {
         oboe::AudioStreamBuilder builder;
         builder.setDirection(oboe::Direction::Output)
@@ -271,14 +276,18 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
         return builder.openStream(gStream);
     };
 
-    const int32_t requestedDeviceId = gRequestedOutputDeviceId.load(std::memory_order_relaxed);
     oboe::Result openResult = openForDevice(requestedDeviceId);
+    int32_t openedRequestId = requestedDeviceId;
     if (openResult != oboe::Result::OK && requestedDeviceId != oboe::kUnspecified) {
+        if (gStream) gStream->close();
         gStream.reset();
         openResult = openForDevice(oboe::kUnspecified);
+        openedRequestId = oboe::kUnspecified;
     }
     if (openResult != oboe::Result::OK || !gStream) {
+        if (gStream) gStream->close();
         gStream.reset();
+        gOpenedOutputRequestId = oboe::kUnspecified;
         return JNI_FALSE;
     }
     for (auto &trackSlot : gTracks) {
@@ -286,14 +295,17 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
         if (track != nullptr && !track->effects.prepare(gStream->getSampleRate())) {
             gStream->close();
             gStream.reset();
+            gOpenedOutputRequestId = oboe::kUnspecified;
             return JNI_FALSE;
         }
     }
     if (gStream->requestStart() != oboe::Result::OK) {
         gStream->close();
         gStream.reset();
+        gOpenedOutputRequestId = oboe::kUnspecified;
         return JNI_FALSE;
     }
+    gOpenedOutputRequestId = openedRequestId;
     gCallback.playing.store(true, std::memory_order_relaxed);
     return JNI_TRUE;
 }
@@ -339,6 +351,7 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeRelease(JNIEnv *, jobject) {
         gStream->close();
         gStream.reset();
     }
+    gOpenedOutputRequestId = oboe::kUnspecified;
 }
 
 extern "C" JNIEXPORT jint JNICALL

@@ -274,10 +274,27 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOutputDevice(deviceId: Int) {
+        if (recording) {
+            outputDeviceMenuExpanded = false
+            statusMessage = "Beende und speichere zuerst die Masteraufnahme; ein Routenwechsel während der Aufnahme ist gesperrt."
+            return
+        }
         preferredOutputDeviceId = deviceId
         AudioEngine.setOutputDeviceId(deviceId)
+        getSharedPreferences(PREF_TRACK_CONTROLS, MODE_PRIVATE).edit()
+            .putInt(KEY_OUTPUT_DEVICE_ID, deviceId)
+            .apply()
         outputDeviceMenuExpanded = false
-        statusMessage = "Ausgang gewählt: ${describePreferredOutput()}. Auswahl gilt beim nächsten Mixerstart."
+        if (playing) {
+            statusMessage = "Wechsle live zu ${describePreferredOutput()} … Der Ton kann kurz aussetzen."
+            startService(
+                Intent(this, AudioPlaybackService::class.java)
+                    .setAction(AudioPlaybackService.ACTION_SET_OUTPUT_DEVICE)
+                    .putExtra(AudioPlaybackService.EXTRA_OUTPUT_DEVICE_ID, deviceId)
+            )
+        } else {
+            statusMessage = "Ausgang gewählt: ${describePreferredOutput()}. Wird beim nächsten Mixerstart geöffnet."
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -285,9 +302,18 @@ class MainActivity : ComponentActivity() {
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
         refreshOutputDevices()
-        preferredOutputDeviceId = outputDevices.firstOrNull {
+        val routePreferences = getSharedPreferences(PREF_TRACK_CONTROLS, MODE_PRIVATE)
+        val savedOutputDeviceId = if (routePreferences.contains(KEY_OUTPUT_DEVICE_ID)) {
+            routePreferences.getInt(KEY_OUTPUT_DEVICE_ID, AudioEngine.OUTPUT_DEVICE_AUTO)
+        } else null
+        val builtInSpeakerId = outputDevices.firstOrNull {
             it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-        }?.id ?: AudioEngine.OUTPUT_DEVICE_AUTO
+        }?.id
+        preferredOutputDeviceId = when {
+            savedOutputDeviceId == AudioEngine.OUTPUT_DEVICE_AUTO -> AudioEngine.OUTPUT_DEVICE_AUTO
+            savedOutputDeviceId != null && outputDevices.any { it.id == savedOutputDeviceId } -> savedOutputDeviceId
+            else -> builtInSpeakerId ?: AudioEngine.OUTPUT_DEVICE_AUTO
+        }
         AudioEngine.setOutputDeviceId(preferredOutputDeviceId)
         autopilotEnabled = savedInstanceState?.getBoolean(KEY_AUTOPILOT) ?: true
         bpm = savedInstanceState?.getFloat(KEY_BPM) ?: 128f
@@ -738,7 +764,6 @@ class MainActivity : ComponentActivity() {
                                 Text("Tatsächlich geöffneter Oboe-Ausgang: $activeOutputText", color = Color(0xFFB6E3C2), style = MaterialTheme.typography.bodySmall)
                                 Box {
                                     OutlinedButton(
-                                        enabled = !playing,
                                         onClick = { outputDeviceMenuExpanded = true }
                                     ) { Text("Audioausgang auswählen") }
                                     DropdownMenu(
@@ -757,7 +782,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
-                                Text("Mixer vor der Auswahl stoppen. Standardmäßig wird der Telefonlautsprecher gezielt angefordert; falls Android das Gerät ablehnt, fällt die App auf die Medien-Standardroute zurück.", color = Color(0xFFFFD180), style = MaterialTheme.typography.bodySmall)
+                                Text("USB oder Bluetooth kann hier auch während der Wiedergabe direkt gewählt werden; die Route wird kurz neu geöffnet. Standardmäßig wird der Telefonlautsprecher angefordert, mit Fallback auf Android-Medienroute.", color = Color(0xFFFFD180), style = MaterialTheme.typography.bodySmall)
                                 Text("Erkannte Ausgänge (nicht zwingend aktiv): $availableOutputText", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
                                 Text("Während der Wiedergabe die Lautstärketasten verwenden und im Android-Medienausgabemenü Lautsprecher/Kopfhörer prüfen.", color = Color(0xFFFFD180), style = MaterialTheme.typography.bodySmall)
                             }
@@ -1973,6 +1998,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_AUTOPILOT = "autopilot_enabled"
         private const val KEY_AUTOPILOT_INTENSITY = "autopilot_intensity"
         private const val KEY_BPM = "bpm"
+        private const val KEY_OUTPUT_DEVICE_ID = "preferred_output_device_id"
         private const val KEY_AUTOSET_ON_OPEN = "auto_set_on_open"
         private const val KEY_FREESOUND_PENDING_STATE = "freesound_pending_oauth_state"
         private const val PREF_TRACK_CONTROLS = "mixer_track_controls"

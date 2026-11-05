@@ -82,6 +82,10 @@ class AudioPlaybackService : Service() {
             ACTION_STOP -> stopPlayback("Wiedergabe wird weich ausgeblendet …")
             ACTION_RECORD_START -> startRecording()
             ACTION_RECORD_STOP -> stopRecording()
+            ACTION_SET_OUTPUT_DEVICE -> switchOutputDevice(
+                intent?.getIntExtra(EXTRA_OUTPUT_DEVICE_ID, AudioEngine.OUTPUT_DEVICE_AUTO)
+                    ?: AudioEngine.OUTPUT_DEVICE_AUTO
+            )
             else -> startPlayback(startId)
         }
         return START_NOT_STICKY
@@ -119,6 +123,38 @@ class AudioPlaybackService : Service() {
         }
         streamStarted = true
         publishState(STATE_PLAYING, "Autopilot-Mixer läuft.")
+        scheduleStreamWatchdog()
+    }
+
+    private fun switchOutputDevice(deviceId: Int) {
+        if (recorder?.isActive == true) {
+            publishState(STATE_PLAYING, "Audioausgang nicht gewechselt: Aufnahme zuerst beenden und speichern.")
+            return
+        }
+        AudioEngine.setOutputDeviceId(deviceId)
+        if (stopping) {
+            publishState(STATE_STOPPING, "Ausgang gespeichert; der Mixer wird erst gestoppt und wechselt beim nächsten Start.")
+            return
+        }
+        if (!hasAudioFocus) {
+            publishState(STATE_PAUSED, "Ausgang gespeichert; die Route wird bei Rückkehr des Audiofokus geöffnet.")
+            return
+        }
+        handler.removeCallbacks(streamWatchdog)
+        if (!AudioEngine.start()) {
+            streamStarted = false
+            recorder?.stop()
+            publishState(STATE_ERROR, "Ausgang konnte nicht geöffnet werden. Wähle Android-Standard und starte den Mixer erneut.")
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            abandonFocus()
+            stopSelf()
+            return
+        }
+        streamStarted = true
+        val activeDeviceId = AudioEngine.outputDeviceId()
+        val requested = if (deviceId == AudioEngine.OUTPUT_DEVICE_AUTO) "Android-Standard" else "Gerät-ID $deviceId"
+        val active = if (activeDeviceId == AudioEngine.OUTPUT_DEVICE_AUTO) "Android-Standard" else "Gerät-ID $activeDeviceId"
+        publishState(STATE_PLAYING, "Audioausgang umgeschaltet: angefordert $requested · tatsächlich geöffnet $active.")
         scheduleStreamWatchdog()
     }
 
@@ -331,12 +367,14 @@ class AudioPlaybackService : Service() {
         const val ACTION_STOP = "de.laermbatz.app.audio.STOP"
         const val ACTION_RECORD_START = "de.laermbatz.app.audio.RECORD_START"
         const val ACTION_RECORD_STOP = "de.laermbatz.app.audio.RECORD_STOP"
+        const val ACTION_SET_OUTPUT_DEVICE = "de.laermbatz.app.audio.SET_OUTPUT_DEVICE"
         const val ACTION_STATE_CHANGED = "de.laermbatz.app.audio.STATE_CHANGED"
         const val EXTRA_STATE = "state"
         const val EXTRA_MESSAGE = "message"
         const val EXTRA_RECORDING = "recording"
         const val EXTRA_RECORDING_SECONDS = "recording_seconds"
         const val EXTRA_RECORDING_MESSAGE = "recording_message"
+        const val EXTRA_OUTPUT_DEVICE_ID = "output_device_id"
         const val STATE_PLAYING = "playing"
         const val STATE_PAUSED = "paused"
         const val STATE_STOPPING = "stopping"
