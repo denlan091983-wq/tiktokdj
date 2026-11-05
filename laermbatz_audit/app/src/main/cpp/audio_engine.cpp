@@ -68,6 +68,7 @@ constexpr size_t kRecordingRingFrames = 262144;  // 5.46 s at 48 kHz, 2 MiB.
 laermbatz::MasterRecordingRing<kRecordingRingFrames> gRecordingRing;
 std::atomic<bool> gRecordingEnabled{false};
 std::atomic<int> gRecordingSampleRate{0};
+std::atomic<float> gLastOutputPeak{0.0f};
 std::mutex gLifecycleMutex;  // JNI/control path only; never taken in onAudioReady.
 
 bool isValidTrackIndex(int index) {
@@ -133,6 +134,7 @@ public:
             }
         }
 
+        float blockPeak = 0.0f;
         for (int32_t frame = 0; frame < numFrames; ++frame) {
             if (masterGain_ < masterTarget) masterGain_ = std::min(masterGain_ + rampPerFrame, masterTarget);
             else if (masterGain_ > masterTarget) masterGain_ = std::max(masterGain_ - rampPerFrame, masterTarget);
@@ -197,8 +199,10 @@ public:
                     out[frame * outputChannels + channel] = 0.0f;
                 }
             }
+            blockPeak = std::max(blockPeak, std::max(std::fabs(left), std::fabs(right)));
             if (isPlaying) beatCounter_ += beatsPerFrame;
         }
+        gLastOutputPeak.store(blockPeak, std::memory_order_relaxed);
 
         // Capture the final, master-gained and limited stereo output only.
         if (gRecordingEnabled.load(std::memory_order_relaxed) && outputChannels == 2) {
@@ -259,6 +263,7 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeStart(JNIEnv *, jobject) {
         ->setFormat(oboe::AudioFormat::Float)
         ->setChannelCount(oboe::ChannelCount::Stereo)
         ->setUsage(oboe::Usage::Media)
+        ->setContentType(oboe::ContentType::Music)
         ->setDataCallback(&gCallback);
 
     if (builder.openStream(gStream) != oboe::Result::OK || !gStream) {
@@ -294,6 +299,11 @@ Java_de_laermbatz_app_audio_AudioEngine_nativeIsStreamRunning(JNIEnv *, jobject)
                    gCallback.playing.load(std::memory_order_relaxed)
                ? JNI_TRUE
                : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jfloat JNICALL
+Java_de_laermbatz_app_audio_AudioEngine_nativeGetLastOutputPeak(JNIEnv *, jobject) {
+    return gLastOutputPeak.load(std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT void JNICALL

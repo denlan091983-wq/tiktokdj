@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -56,6 +58,7 @@ import de.laermbatz.app.audio.DecodedWav
 import de.laermbatz.app.audio.LoopTempoAnalysis
 import de.laermbatz.app.audio.LoopTempoAnalyzer
 import de.laermbatz.app.audio.WavDecoder
+import de.laermbatz.app.audio.WavPreviewPlayer
 import de.laermbatz.app.events.TikTokLiveEventSource
 import de.laermbatz.app.freesound.FreesoundApiClient
 import de.laermbatz.app.freesound.FreesoundCredentials
@@ -82,6 +85,7 @@ import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.Properties
 import java.util.concurrent.Executors
+import kotlin.math.log10
 import kotlin.math.roundToInt
 
 private data class TrackUiState(
@@ -124,6 +128,14 @@ class MainActivity : ComponentActivity() {
     private var autopilotIntensity by mutableStateOf(1.0f)
     private var autopilotBarPosition by mutableStateOf(0.0f)
     private var autopilotPhaseIntensity by mutableStateOf(0.0f)
+    private var liveOutputPeak by mutableStateOf(0.0f)
+    private var liveOutputStatus by mutableStateOf("Noch nicht gestartet")
+    private var mediaVolumeText by mutableStateOf("—")
+    private var availableOutputText by mutableStateOf("—")
+    private lateinit var audioManager: AudioManager
+    private val previewPlayer = WavPreviewPlayer()
+    private var previewingTrack by mutableStateOf(-1)
+    private var previewRequestSerial = 0
     private var bpm by mutableStateOf(128f)
     private var tracksRestored by mutableStateOf(false)
     private val freesoundApiClient = FreesoundApiClient()
@@ -162,6 +174,21 @@ class MainActivity : ComponentActivity() {
         override fun run() {
             autopilotBarPosition = AudioEngine.autopilotBarPosition()
             autopilotPhaseIntensity = AudioEngine.autopilotPhaseIntensity()
+            if (playing) {
+                liveOutputPeak = AudioEngine.lastOutputPeak()
+                liveOutputStatus = if (AudioEngine.isStreamRunning()) "Oboe-Stream aktiv" else "Oboe-Stream nicht aktiv"
+                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+                val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                mediaVolumeText = "$currentVolume / $maxVolume"
+                availableOutputText = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .map(::describeOutputDevice)
+                    .distinct()
+                    .ifEmpty { listOf("Kein Audioausgang erkannt") }
+                    .joinToString(" · ")
+            } else {
+                liveOutputStatus = "Wiedergabe gestoppt"
+                liveOutputPeak = 0.0f
+            }
             progressHandler.postDelayed(this, 250L)
         }
     }
@@ -204,8 +231,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun describeOutputDevice(device: AudioDeviceInfo): String = when (device.type) {
+        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Telefonlautsprecher"
+        AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "Hörer"
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES, AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Kabelkopfhörer"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth"
+        AudioDeviceInfo.TYPE_USB_DEVICE, AudioDeviceInfo.TYPE_USB_HEADSET -> "USB-Audio"
+        AudioDeviceInfo.TYPE_HDMI -> "HDMI-Audio"
+        else -> device.productName.toString().ifBlank { "Audioausgang ${device.id}" }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        setVolumeControlStream(AudioManager.STREAM_MUSIC)
         autopilotEnabled = savedInstanceState?.getBoolean(KEY_AUTOPILOT) ?: true
         bpm = savedInstanceState?.getFloat(KEY_BPM) ?: 128f
         freesoundCredentialStore = FreesoundCredentialStore(this)
@@ -470,6 +509,12 @@ class MainActivity : ComponentActivity() {
                                         Spacer(Modifier.weight(1f))
                                         if (track.isLoaded) {
                                             TextButton(
+                                                enabled = !track.isLoading && !playing && !autoSetPreparing,
+                                                onClick = { toggleTrackPreview(track.index) }
+                                            ) {
+                                                Text(if (previewingTrack == track.index) "Vorschau stoppen" else "Abspielen")
+                                            }
+                                            TextButton(
                                                 enabled = !track.isLoading && !autoSetPreparing,
                                                 onClick = { clearTrack(track.index) }
                                             ) { Text("Entfernen") }
@@ -637,6 +682,19 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF18232A))) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("LIVE-AUSGANGSDIAGNOSE", color = Color.White)
+                                Text("Status: $liveOutputStatus", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                val peakText = if (liveOutputPeak < 0.00001f) "unter −100 dBFS / kein messbarer Pegel"
+                                else String.format(Locale.GERMANY, "%.1f dBFS", 20.0 * log10(liveOutputPeak.toDouble()))
+                                Text("Signal im Oboe-Ausgabepuffer: $peakText", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                Text("Medienlautstärke: $mediaVolumeText", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                Text("Erkannte Ausgänge (nicht zwingend aktiv): $availableOutputText", color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                                Text("Während der Wiedergabe die Lautstärketasten verwenden und im Android-Medienausgabemenü Lautsprecher/Kopfhörer prüfen.", color = Color(0xFFFFD180), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+
                         Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1616))) {
                             Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text("TIKTOK LIVE · NICHT VERBUNDEN", color = Color(0xFFFFB4AB))
@@ -747,6 +805,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         progressHandler.removeCallbacks(progressPoller)
+        stopTrackPreview()
         unregisterReceiver(stateReceiver)
         super.onStop()
     }
@@ -852,6 +911,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        previewPlayer.close()
         ioExecutor.shutdown()
         super.onDestroy()
     }
@@ -1554,6 +1614,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startPlayback() {
+        stopTrackPreview()
         if (AudioEngine.loadedTrackCount() == 0) {
             statusMessage = "Importiere zuerst mindestens eine gültige WAV-Datei."
             return
@@ -1565,6 +1626,37 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(this, intent)
         else startService(intent)
         statusMessage = "Audio-Mixer wird gestartet …"
+    }
+
+    private fun toggleTrackPreview(index: Int) {
+        if (index !in tracks.indices || !tracks[index].isLoaded || tracks[index].isLoading) return
+        if (playing || AudioEngine.isStreamRunning()) {
+            statusMessage = "Soundfile-Vorschau ist nur bei gestopptem Mixer verfügbar."
+            return
+        }
+        if (previewingTrack == index) {
+            stopTrackPreview()
+            return
+        }
+        stopTrackPreview()
+        val request = ++previewRequestSerial
+        previewingTrack = index
+        statusMessage = "Vorschau: ${tracks[index].fileName} · Originaldatei ohne Mixer-Effekte."
+        previewPlayer.play(trackFile(index)) { error ->
+            if (request != previewRequestSerial) return@play
+            previewingTrack = -1
+            statusMessage = error?.let { "Soundfile-Vorschau fehlgeschlagen: $it" }
+                ?: "Soundfile-Vorschau beendet."
+        }
+    }
+
+    private fun stopTrackPreview() {
+        previewRequestSerial++
+        previewPlayer.stop()
+        if (previewingTrack >= 0) {
+            previewingTrack = -1
+            statusMessage = "Soundfile-Vorschau gestoppt."
+        }
     }
 
     private fun stopPlayback() {
@@ -1603,6 +1695,7 @@ class MainActivity : ComponentActivity() {
         displayNameOverride: String? = null,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
+        if (previewingTrack == index) stopTrackPreview()
         val controlSnapshot = tracks[index]
         updateTrack(index) { it.copy(isLoading = true) }
         statusMessage = "WAV für ${tracks[index].label} wird geprüft …"
@@ -1761,6 +1854,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearTrack(index: Int) {
+        if (previewingTrack == index) stopTrackPreview()
         ioExecutor.execute {
             AudioEngine.clearTrack(index)
             trackFile(index).delete()
