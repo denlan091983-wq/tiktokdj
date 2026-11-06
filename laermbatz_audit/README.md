@@ -17,9 +17,9 @@ Projektpaket für die Weiterentwicklung mit Claude.
 - `docs/ROADMAP.md`: sinnvoller MVP- und Entwicklungsplan.
 - `claude/MASTER_PROMPT.md`: Startprompt, den du Claude geben kannst.
 
-## Implementierungsstatus (4. November 2026)
+## Implementierungsstatus (6. November 2026)
 
-Das Paket enthält jetzt neben Konzept und Spezifikationen einen Android-Audio-MVP: SAF-WAV-Import, Offline-BPM-Erkennung und Taktquantisierung, sechs native Loop-Spuren, BPM-Regler, Arrangement-Autopilot, persistente Spur-Level sowie Low-pass, BPM-Delay und Reverb je Spur. Für Loops ab ausreichender Fensterlänge nutzt der native Mixer WSOLA-Pitch-Lock; sehr kurze Clips verwenden einen sichtbaren Varispeed-Fallback. Build- und Funktionsgrenzen stehen in `MIXER_MVP_STATUS.md`.
+Das Paket enthält neben Konzept und Spezifikationen einen Android-Audio-MVP: SAF-WAV- und lokale ZIP-Loop-Imports, sechs native Loop-Spuren, BPM-Regler, Arrangement-Autopilot, Spur-Level und Effekte. ZIP-WAVs werden lokal nach Kategorie/Genre sortiert und automatisch auf BPM/Tonart analysiert. Der interne Mixer quantisiert Loops per WSOLA auf sein eingestelltes BPM; Bassline/Synth können bei sicher passender Dur-/Moll-Tonart begrenzt transponiert werden. Alle manuell ausgewählten ZIPs bleiben unabhängig vom Dateinamen als lizenzungeprüfte Nutzerimporte markiert; die lokale Importbestätigung ist keine Freigabe für öffentliche LIVE-Streams oder Veröffentlichung. Build- und Funktionsgrenzen stehen in `MIXER_MVP_STATUS.md` und `AUDIT_ROADMAP.md`.
 
 Der jüngste Cloud-Build steht im verbindlichen Auditbericht [AUDIT_ROADMAP.md](AUDIT_ROADMAP.md). Die Android-App ist ein baubares **Debug-MVP**, keine live-abgenommene oder release-signierte Streaming-App. Ein physischer Gerätetest und ein bestätigter TikTok-Ausgabeweg stehen noch aus.
 

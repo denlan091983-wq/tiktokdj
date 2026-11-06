@@ -68,6 +68,16 @@ class SamplePackZipImporterTest {
     }
 
     @Test
+    fun preservesOnlySanitizedArchivePathAsCategorizationMetadata() {
+        val result = importer(zip("../Snare/../Hard Techno/snare_loop.wav" to validPcmWav())).import()
+
+        assertEquals(1, result.importedFiles.size)
+        assertEquals("Snare/Hard Techno/snare_loop.wav", result.importedFiles.single().archivePath)
+        assertEquals(target, result.importedFiles.single().file.parentFile)
+        assertFalse(File(root, "Snare").exists())
+    }
+
+    @Test
     fun countsInvalidWavWithoutImportingIt() {
         val result = importer(zip("bad.wav" to byteArrayOf(1, 2, 3, 4))).import()
 
@@ -85,7 +95,23 @@ class SamplePackZipImporterTest {
         assertEquals(1, first.importedFiles.size)
         assertEquals(1, second.duplicateCount)
         assertTrue(second.importedFiles.isEmpty())
+        assertEquals(first.importedFiles.single().file, second.duplicateFiles.single().file)
+        assertEquals("renamed.wav", second.duplicateFiles.single().archivePath)
         assertEquals(1, target.listFiles()?.count { it.extension == "wav" })
+    }
+
+    @Test
+    fun insufficientSpaceStopsBeforeStagingAndCleansTemporaryFiles() {
+        val result = importer(
+            zip("low-space.wav" to validPcmWav()),
+            minimumFreeSpaceBytes = 128,
+            freeSpaceProvider = { 127 }
+        ).import()
+
+        assertEquals(ImportStatus.INSUFFICIENT_SPACE, result.status)
+        assertTrue(result.importedFiles.isEmpty())
+        assertTrue(target.listFiles().orEmpty().none { it.extension == "wav" })
+        assertNoStagingDirectories()
     }
 
     @Test
@@ -196,6 +222,34 @@ class SamplePackZipImporterTest {
         assertNoStagingDirectories()
     }
 
+    @Test
+    fun staleStagingCleanupRemovesOnlyOldImporterDirectories() {
+        val stale = File(target, ".sample-pack-import-stale").apply {
+            mkdir()
+            File(this, "large.stage").writeBytes(byteArrayOf(1, 2, 3))
+            setLastModified(1_000)
+        }
+        val recent = File(target, ".sample-pack-import-recent").apply {
+            mkdir()
+            setLastModified(9_500)
+        }
+        val unrelated = File(target, ".other-temp").apply {
+            mkdir()
+            setLastModified(1_000)
+        }
+
+        val removed = SamplePackZipImporter.cleanupStaleStaging(
+            target,
+            nowMillis = 10_000,
+            maxAgeMillis = 5_000
+        )
+
+        assertEquals(1, removed)
+        assertFalse(stale.exists())
+        assertTrue(recent.exists())
+        assertTrue(unrelated.exists())
+    }
+
     private fun importer(
         archive: ByteArray,
         rejectEntryNames: List<String> = emptyList(),
@@ -203,7 +257,8 @@ class SamplePackZipImporterTest {
         maxWavBytes: Long = SamplePackZipImporter.DEFAULT_MAX_WAV_BYTES,
         maxTotalWavBytes: Long = SamplePackZipImporter.DEFAULT_MAX_TOTAL_WAV_BYTES,
         maxTotalDecompressedBytes: Long = SamplePackZipImporter.DEFAULT_MAX_TOTAL_DECOMPRESSED_BYTES,
-        minimumFreeSpaceBytes: Long = 0
+        minimumFreeSpaceBytes: Long = 0,
+        freeSpaceProvider: (File) -> Long = { Long.MAX_VALUE }
     ) = SamplePackZipImporter(
         inputStream = archive.inputStream(),
         archiveDisplayName = "test pack.zip",
@@ -214,7 +269,7 @@ class SamplePackZipImporterTest {
         maxTotalWavBytes = maxTotalWavBytes,
         maxTotalDecompressedBytes = maxTotalDecompressedBytes,
         minimumFreeSpaceBytes = minimumFreeSpaceBytes,
-        freeSpaceProvider = { Long.MAX_VALUE }
+        freeSpaceProvider = freeSpaceProvider
     )
 
     private fun zip(vararg entries: Pair<String, ByteArray>): ByteArray =

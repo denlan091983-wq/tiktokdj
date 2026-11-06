@@ -8,6 +8,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -91,7 +92,16 @@ class FreesoundLibraryStoreTest {
             SamplePackLicenseCatalog.forArchiveName("FREE_HARD_TECHNO_SAMPLE_PACK_-_KNALWERK.zip")
         )
 
-        val imported = store.registerImportedPackSample(wav, policy, FreesoundLoopCategory.KICK)
+        val imported = store.registerImportedPackSample(
+            wav,
+            policy,
+            FreesoundLoopCategory.KICK,
+            bpm = 132.5f,
+            key = "F# minor",
+            keyConfidence = 0.74f,
+            genre = "Hard Techno",
+            archivePath = "Kick/KNALWERK_KICK.wav"
+        )
         val reloaded = store.list().single()
 
         assertEquals("KNALWERK", imported.provider)
@@ -101,6 +111,88 @@ class FreesoundLibraryStoreTest {
         assertEquals(FreesoundLoopCategory.KICK, reloaded.category)
         assertFalse(reloaded.categoryManuallySet)
         assertEquals(imported.sourcePack, reloaded.sourcePack)
+        assertEquals(132.5f, reloaded.bpm!!, 0f)
+        assertEquals("F# minor", reloaded.key)
+        assertEquals(0.74f, reloaded.keyConfidence, 0f)
+        assertEquals("Hard Techno", reloaded.genre)
+        assertEquals("Kick/KNALWERK_KICK.wav", reloaded.archivePath)
+    }
+
+    @Test
+    fun userZipIsClearlyMarkedAsUnverifiedAndKeepsAnalyzedMetadata() {
+        val wav = wav("user_loop.wav")
+
+        val imported = store.registerUserZipSample(
+            wav,
+            archiveName = "my_legal_loops.zip",
+            category = FreesoundLoopCategory.SNARE,
+            bpm = 128f,
+            key = null,
+            keyConfidence = 0f,
+            genre = "Techno",
+            archivePath = "Snare/loop.wav"
+        )
+        val reloaded = store.list().single()
+
+        assertTrue(SamplePackLicenseCatalog.isUserSuppliedZipLicense(imported.license))
+        assertTrue(imported.license.contains("nicht"))
+        assertEquals(FreesoundLoopCategory.SNARE, reloaded.category)
+        assertEquals(128f, reloaded.bpm!!, 0f)
+        assertNull(reloaded.key)
+        assertEquals("Techno", reloaded.genre)
+        assertEquals("Snare/loop.wav", reloaded.archivePath)
+    }
+
+    @Test
+    fun reimportRepairsMissingDuplicateSidecarWithoutOverwritingExistingMetadata() {
+        val wav = wav("duplicate.wav")
+
+        assertTrue(store.needsUserZipMetadata(wav))
+        assertTrue(
+            store.registerUserZipSampleIfMissing(
+                wav,
+                archiveName = "user_loops.zip",
+                category = FreesoundLoopCategory.SNARE,
+                bpm = 130f,
+                genre = "Hard Techno",
+                archivePath = "Snare/duplicate.wav"
+            )
+        )
+        assertFalse(
+            store.registerUserZipSampleIfMissing(
+                wav,
+                archiveName = "another_copy.zip",
+                category = FreesoundLoopCategory.KICK,
+                bpm = 140f
+            )
+        )
+
+        val item = store.list().single()
+        assertEquals(FreesoundLoopCategory.SNARE, item.category)
+        assertEquals("user_loops.zip", item.sourcePack)
+        assertEquals(130f, item.bpm!!, 0f)
+        assertEquals("Snare/duplicate.wav", item.archivePath)
+    }
+
+    @Test
+    fun downgradesLegacyFilenameBasedPackMetadataToUnverified() {
+        val wav = wav("legacy_pack.wav")
+        writeMetadata(
+            wav,
+            "Legacy pack sample",
+            extra = mapOf(
+                "license" to "${LOCAL_SAMPLE_PACK_LICENSE_PREFIX}matched by filename",
+                "provider" to "KNALWERK",
+                "source_pack" to "Free Hard Techno Sample Pack"
+            )
+        )
+
+        val item = store.list().single()
+
+        assertTrue(SamplePackLicenseCatalog.isUserSuppliedZipLicense(item.license))
+        assertTrue(item.license.contains("ältere Zuordnung"))
+        assertEquals("Free Hard Techno Sample Pack", item.sourcePack)
+        assertEquals("Vom Nutzer importiertes ZIP", item.provider)
     }
 
     @Test

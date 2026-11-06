@@ -10,6 +10,8 @@ class FreesoundAutoCategorizerTest {
         assertEquals(FreesoundLoopCategory.KICK, FreesoundAutoCategorizer.inferCategory("Kick Drum Loop"))
         assertEquals(FreesoundLoopCategory.BASSLINE, FreesoundAutoCategorizer.inferCategory("Dunkle Bassline"))
         assertEquals(FreesoundLoopCategory.HI_HAT, FreesoundAutoCategorizer.inferCategory("Hi-Hat Rhythm"))
+        assertEquals(FreesoundLoopCategory.SNARE, FreesoundAutoCategorizer.inferCategory("Snare Drum Loop"))
+        assertEquals(FreesoundLoopCategory.KICK, FreesoundAutoCategorizer.inferCategory("Bass Drum Loop"))
         assertEquals(FreesoundLoopCategory.PERCUSSION, FreesoundAutoCategorizer.inferCategory("Schlagzeug Loop"))
         assertEquals(FreesoundLoopCategory.SYNTH, FreesoundAutoCategorizer.inferCategory("Synthesizer Pad"))
         assertEquals(FreesoundLoopCategory.EFFECTS, FreesoundAutoCategorizer.inferCategory("Riser Effekt"))
@@ -22,6 +24,8 @@ class FreesoundAutoCategorizerTest {
         assertEquals(FreesoundLoopCategory.BASSLINE, FreesoundAutoCategorizer.inferCategory("Low_end pulse"))
         assertEquals(FreesoundLoopCategory.HI_HAT, FreesoundAutoCategorizer.inferCategory("open_hat_loop"))
         assertEquals(FreesoundLoopCategory.HI_HAT, FreesoundAutoCategorizer.inferCategory("HIHAT"))
+        assertEquals(FreesoundLoopCategory.HI_HAT, FreesoundAutoCategorizer.inferCategory("High Hat"))
+        assertEquals(FreesoundLoopCategory.SNARE, FreesoundAutoCategorizer.inferCategory("snear_loop.wav"))
         assertEquals(FreesoundLoopCategory.PERCUSSION, FreesoundAutoCategorizer.inferCategory("Percussion"))
         assertEquals(FreesoundLoopCategory.PERCUSSION, FreesoundAutoCategorizer.inferCategory("Shaker-clap-tom"))
         assertEquals(FreesoundLoopCategory.SYNTH, FreesoundAutoCategorizer.inferCategory("RAVE_STAB"))
@@ -52,17 +56,26 @@ class FreesoundAutoCategorizerTest {
     }
 
     @Test
+    fun infersGenresFromArchiveNamesAndSubfolders() {
+        assertEquals("Hard Techno", FreesoundAutoCategorizer.inferGenre("Pack.zip", "Loops/Hard-Techno/Kick.wav"))
+        assertEquals("Hardstyle", FreesoundAutoCategorizer.inferGenre("MyLoops Free Hardstyle.zip"))
+        assertEquals("Psytrance", FreesoundAutoCategorizer.inferGenre("psy trance bass.wav"))
+        assertEquals("Unbekannt", FreesoundAutoCategorizer.inferGenre("random percussion.wav"))
+    }
+
+    @Test
     fun mapsEveryCategoryToItsSearchQuery() {
         assertEquals("techno kick loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.KICK))
         assertEquals("techno bassline loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.BASSLINE))
         assertEquals("techno hi hat loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.HI_HAT))
+        assertEquals("techno snare loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.SNARE))
         assertEquals("techno percussion loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.PERCUSSION))
         assertEquals("techno synth loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.SYNTH))
         assertEquals("techno sound effect loop", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.EFFECTS))
         assertEquals("", FreesoundAutoCategorizer.searchQuery(FreesoundLoopCategory.UNCATEGORIZED))
 
         assertEquals(
-            listOf("techno kick loop", "techno kick", "kick drum", "kick"),
+            listOf("techno kick loop", "techno kick", "kick drum", "bass drum", "kick"),
             FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.KICK)
         )
         assertEquals(
@@ -72,6 +85,10 @@ class FreesoundAutoCategorizerTest {
         assertEquals(
             listOf("techno hi hat loop", "hi hat loop", "hi hat", "hihat"),
             FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.HI_HAT)
+        )
+        assertEquals(
+            listOf("techno snare loop", "techno snare", "snare loop", "snare drum", "snare"),
+            FreesoundAutoCategorizer.searchQueries(FreesoundLoopCategory.SNARE)
         )
         assertEquals(
             listOf("techno percussion loop", "percussion loop", "percussion", "drum loop"),

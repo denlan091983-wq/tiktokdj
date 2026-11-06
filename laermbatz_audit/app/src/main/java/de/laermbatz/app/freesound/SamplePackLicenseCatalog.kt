@@ -3,6 +3,7 @@ package de.laermbatz.app.freesound
 import java.util.Locale
 
 const val LOCAL_SAMPLE_PACK_LICENSE_PREFIX = "LOCAL_SAMPLE_PACK:"
+const val LOCAL_USER_ZIP_LICENSE_PREFIX = "LOCAL_USER_ZIP:"
 
 /**
  * Vendor-specific terms shown for user-supplied archives. These records never grant permission to
@@ -92,7 +93,10 @@ object SamplePackLicenseCatalog {
         )
     )
 
-    /** Returns a known Drive archive policy; unknown names are not silently treated as licensed. */
+    /**
+     * Filename-only display hint. This does not verify ZIP identity or license provenance and must
+     * never be used to mark a user-selected archive as rights-cleared.
+     */
     fun forArchiveName(name: String): SamplePackLicenseSummary? {
         val normalized = normalize(name)
         return when {
@@ -108,10 +112,19 @@ object SamplePackLicenseCatalog {
         }
     }
 
-    fun isLocalPackLicense(value: String): Boolean = value.startsWith(LOCAL_SAMPLE_PACK_LICENSE_PREFIX)
+    fun isLocalPackLicense(value: String): Boolean =
+        value.startsWith(LOCAL_SAMPLE_PACK_LICENSE_PREFIX) || isUserSuppliedZipLicense(value)
+
+    fun isUserSuppliedZipLicense(value: String): Boolean = value.startsWith(LOCAL_USER_ZIP_LICENSE_PREFIX)
+
+    fun localLicenseDescription(value: String): String = when {
+        isUserSuppliedZipLicense(value) -> value.removePrefix(LOCAL_USER_ZIP_LICENSE_PREFIX)
+        value.startsWith(LOCAL_SAMPLE_PACK_LICENSE_PREFIX) -> value.removePrefix(LOCAL_SAMPLE_PACK_LICENSE_PREFIX)
+        else -> value
+    }
 
     fun legalImportNotice(): String =
-        "Es werden nur WAV-Dateien auf diesem Gerät importiert; ZIPs und rohe WAVs werden nicht in APK, GitHub oder Radio-Website eingebettet. Lizenzbedingungen unterscheiden sich. LucidSamples verlangt Credit; für alle geprüften Packs bleibt öffentliche Live-Stream-Nutzung unklar. Bitte lies die Anbieterbedingungen, bevor du streamst oder Mixe veröffentlichst."
+        "Es werden nur WAV-Dateien lokal auf diesem Gerät importiert; ZIPs und rohe WAVs werden nicht in APK, GitHub oder Radio-Website eingebettet. Unbekannte ZIPs werden ausdrücklich als Nutzerimport mit nicht unabhängig geprüfter Lizenz markiert. Prüfe die Anbieterbedingungen und bestätige, dass du die Dateien lokal nutzen darfst. Öffentliche Live-Stream- oder Mix-Veröffentlichungsrechte sind damit nicht automatisch bestätigt; nötige Credits bleiben deine Verantwortung."
 
     private fun normalize(value: String): String = value.lowercase(Locale.ROOT)
         .replace(Regex("[^a-z0-9]+"), " ")

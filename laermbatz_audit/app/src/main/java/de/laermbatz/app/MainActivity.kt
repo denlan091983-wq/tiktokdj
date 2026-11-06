@@ -61,6 +61,9 @@ import de.laermbatz.app.audio.AudioPlaybackService
 import de.laermbatz.app.audio.DecodedWav
 import de.laermbatz.app.audio.LoopTempoAnalysis
 import de.laermbatz.app.audio.LoopTempoAnalyzer
+import de.laermbatz.app.audio.LoopKeyAnalysis
+import de.laermbatz.app.audio.LoopKeyAnalyzer
+import de.laermbatz.app.audio.LoopPitchShifter
 import de.laermbatz.app.audio.WavDecoder
 import de.laermbatz.app.audio.WavPreviewPlayer
 import de.laermbatz.app.events.TikTokLiveEventSource
@@ -78,7 +81,6 @@ import de.laermbatz.app.freesound.FreesoundOAuthFlow
 import de.laermbatz.app.freesound.FreesoundSound
 import de.laermbatz.app.freesound.SamplePackLicenseCatalog
 import de.laermbatz.app.freesound.SamplePackZipImporter
-import de.laermbatz.app.freesound.LOCAL_SAMPLE_PACK_LICENSE_PREFIX
 import de.laermbatz.app.freesound.ImportStatus
 import java.io.File
 import java.io.FileInputStream
@@ -89,6 +91,7 @@ import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.Properties
 import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.roundToInt
 
@@ -107,7 +110,21 @@ private data class TrackUiState(
     val reverbSend: Float = 0f,
     val effectsExpanded: Boolean = false,
     val detail: String = "",
-    val sourceAttribution: String = ""
+    val sourceAttribution: String = "",
+    val sourceBpm: Float? = null,
+    val sourceKey: String? = null,
+    val matchedKey: String? = null,
+    val keyConfidence: Float = 0f,
+    val pitchShiftSemitones: Int = 0
+)
+
+private data class PreparedLoop(
+    val audio: DecodedWav,
+    val tempo: LoopTempoAnalysis,
+    val key: LoopKeyAnalysis,
+    val targetKey: String?,
+    val pitchShiftSemitones: Int,
+    val matchedKey: String?
 )
 
 private data class AutoSetSelection(
@@ -157,6 +174,7 @@ class MainActivity : ComponentActivity() {
     private var previewingTrack by mutableStateOf(-1)
     private var previewRequestSerial = 0
     private var bpm by mutableStateOf(128f)
+    private var liveKeyAnchor by mutableStateOf<String?>(null)
     private var tracksRestored by mutableStateOf(false)
     private val freesoundApiClient = FreesoundApiClient()
     private lateinit var freesoundCredentialStore: FreesoundCredentialStore
@@ -170,7 +188,7 @@ class MainActivity : ComponentActivity() {
     private val freesoundResults = mutableStateListOf<FreesoundSound>()
     private var freesoundBusy by mutableStateOf(false)
     private var samplePackBusy by mutableStateOf(false)
-    private var samplePackStatus by mutableStateOf("Drive-ZIPs werden ausschließlich lokal importiert; öffentliche Stream-Rechte sind nicht automatisch bestätigt.")
+    private var samplePackStatus by mutableStateOf("ZIP-Loops bleiben lokal; unbekannte Lizenzbedingungen werden als ungeprüft markiert.")
     private var showSamplePackImportNotice by mutableStateOf(false)
     private var samplePackNoticeConfirmed by mutableStateOf(false)
     private var autoSetPreparing by mutableStateOf(false)
@@ -379,7 +397,9 @@ class MainActivity : ComponentActivity() {
         autopilotEnabled = savedInstanceState?.getBoolean(KEY_AUTOPILOT) ?: true
         bpm = savedInstanceState?.getFloat(KEY_BPM) ?: 128f
         freesoundCredentialStore = FreesoundCredentialStore(this)
-        freesoundLibraryStore = FreesoundLibraryStore(File(filesDir, FREESOUND_LIBRARY_DIR))
+        val loopLibraryDirectory = File(filesDir, FREESOUND_LIBRARY_DIR)
+        ioExecutor.execute { SamplePackZipImporter.cleanupStaleStaging(loopLibraryDirectory) }
+        freesoundLibraryStore = FreesoundLibraryStore(loopLibraryDirectory)
         freesoundCredentials = freesoundCredentialStore.load()
         freesoundPendingState = savedInstanceState?.getString(KEY_FREESOUND_PENDING_STATE)
         val preferences = getSharedPreferences(PREF_TRACK_CONTROLS, MODE_PRIVATE)
@@ -579,7 +599,12 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
                                 Text(
-                                    "Loops werden taktgenau mit WSOLA-Pitch-Lock angepasst; sehr kurze Clips können die Tonhöhe ändern.",
+                                    "Live-Key-Anker: ${currentLiveKey() ?: "noch nicht sicher erkannt"}. Der erste sichere Bassline-/Synth-Key setzt den Anker; zum Ändern beide melodischen Spuren leeren.",
+                                    color = Color.LightGray,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    "BPM-Änderungen folgen laufende Loops automatisch. Bassline/Synth werden beim Laden nur bei sicher passender Dur-/Moll-Tonart angeglichen; Drums/FX bleiben unverändert.",
                                     color = Color.LightGray,
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -881,6 +906,8 @@ class MainActivity : ComponentActivity() {
                                 items = freesoundLibraryItems.toList(),
                                 selectedTrackLabel = "${selectedFreesoundTrack + 1}. ${tracks[selectedFreesoundTrack].label}",
                                 canLoad = !tracks[selectedFreesoundTrack].isLoading && !freesoundBusy,
+                                liveBpm = bpm,
+                                liveKey = currentLiveKey(),
                                 categoryFilter = freesoundLibraryFilter,
                                 onFilterChange = { freesoundLibraryFilter = it },
                                 onChangeCategory = { item, category -> changeFreesoundCategory(item, category) },
@@ -895,7 +922,7 @@ class MainActivity : ComponentActivity() {
                                     showSamplePackImportNotice = false
                                     samplePackNoticeConfirmed = false
                                 },
-                                title = { Text("Samplepacks nur lokal importieren") },
+                                title = { Text("ZIP-Loops nur lokal importieren") },
                                 text = {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Text(SamplePackLicenseCatalog.legalImportNotice())
@@ -905,7 +932,7 @@ class MainActivity : ComponentActivity() {
                                                 onCheckedChange = { samplePackNoticeConfirmed = it }
                                             )
                                             Text(
-                                                "Ich habe die Anbieterbedingungen geprüft und darf diese Dateien lokal nutzen; rohe WAVs gebe ich nicht weiter.",
+                                                "Ich habe die Lizenzbedingungen geprüft und darf diese WAVs lokal nutzen. Unbekannte ZIPs sind nicht unabhängig verifiziert; rohe WAVs gebe ich nicht weiter.",
                                                 style = MaterialTheme.typography.bodySmall
                                             )
                                         }
@@ -919,7 +946,7 @@ class MainActivity : ComponentActivity() {
                                             samplePackNoticeConfirmed = false
                                             samplePackPicker.launch(arrayOf("application/zip"))
                                         }
-                                    ) { Text("ZIPs auswählen") }
+                                    ) { Text("Loop-ZIPs auswählen") }
                                 },
                                 dismissButton = {
                                     TextButton(onClick = {
@@ -1353,11 +1380,15 @@ class MainActivity : ComponentActivity() {
         freesoundBusy = true
         samplePackStatus = "${uris.size} ausgewählte ZIP-Datei(en) werden geprüft …"
         val destination = File(filesDir, FREESOUND_LIBRARY_DIR)
+        val targetBpmSnapshot = bpm
 
         ioExecutor.execute {
             var importedCount = 0
             var duplicateCount = 0
-            var unknownCount = 0
+            var unverifiedArchiveCount = 0
+            var analyzedBpmCount = 0
+            var analyzedKeyCount = 0
+            var repairedMetadataCount = 0
             var failedMetadataCount = 0
             var batchDecompressedBytes = 0L
             var batchLimitReported = false
@@ -1373,16 +1404,12 @@ class MainActivity : ComponentActivity() {
                 }
                 runOnUiThread {
                     if (!isFinishing && !isDestroyed) {
-                        samplePackStatus = "ZIP ${position + 1}/${uris.size}: Datei- und Lizenzquelle wird geprüft …"
+                        samplePackStatus = "ZIP ${position + 1}/${uris.size}: ZIP-Signatur und WAV-Dateien werden geprüft …"
                     }
                 }
                 val archiveName = runCatching { queryDisplayName(uri) }.getOrDefault("unbekannt.zip")
-                val policy = SamplePackLicenseCatalog.forArchiveName(archiveName)
-                if (policy == null) {
-                    unknownCount++
-                    warnings += "$archiveName: kein geprüfter Pack-Eintrag; übersprungen"
-                    return@forEachIndexed
-                }
+                // A document-provider filename is not proof of pack identity or license provenance.
+                unverifiedArchiveCount++
 
                 val result = try {
                     val archiveStream = contentResolver.openInputStream(uri)
@@ -1405,12 +1432,58 @@ class MainActivity : ComponentActivity() {
                 if (result.status != ImportStatus.COMPLETE) {
                     warnings += "$archiveName: ${result.status}; ${result.importedFiles.size} WAV(s) eventuell bereits lokal übernommen"
                 }
-                result.importedFiles.forEach { imported ->
-                    val category = FreesoundAutoCategorizer.inferCategory(imported.name, policy.packName)
+                val samplesToIndex = result.importedFiles + result.duplicateFiles
+                samplesToIndex.forEachIndexed { sampleIndex, imported ->
+                    val isDuplicate = sampleIndex >= result.importedFiles.size
+                    if (isDuplicate && !freesoundLibraryStore.needsUserZipMetadata(imported.file)) {
+                        return@forEachIndexed
+                    }
+                    if (sampleIndex % 10 == 0) {
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                samplePackStatus = "${archiveName}: analysiere WAV ${sampleIndex + 1}/${samplesToIndex.size} · Ziel ${targetBpmSnapshot.toInt()} BPM · Tonart/Kategorie/Genre …"
+                            }
+                        }
+                    }
+                    val category = FreesoundAutoCategorizer.inferCategory(
+                        "${archiveName} ${imported.archivePath}",
+                        imported.name
+                    )
                         ?: FreesoundLoopCategory.UNCATEGORIZED
+                    val genre = FreesoundAutoCategorizer.inferGenre(
+                        "$archiveName ${imported.archivePath}",
+                        imported.name
+                    )
                     try {
-                        freesoundLibraryStore.registerImportedPackSample(imported.file, policy, category)
-                        importedCount++
+                        var detectedBpm: Float? = null
+                        var keyAnalysis: LoopKeyAnalysis? = null
+                        try {
+                            val decoded = imported.file.inputStream().use { WavDecoder.decode(it) }
+                            detectedBpm = LoopTempoAnalyzer.analyze(decoded, targetBpmSnapshot).detectedBpm
+                            keyAnalysis = LoopKeyAnalyzer.analyze(decoded)
+                            if (detectedBpm != null) analyzedBpmCount++
+                            if (keyAnalysis?.key != null) analyzedKeyCount++
+                        } catch (analysisError: Exception) {
+                            warnings += "${imported.name}: BPM/Tonart nicht sicher analysiert (${analysisError.message ?: "Analysefehler"})"
+                        }
+                        val metadataWritten = freesoundLibraryStore.registerUserZipSampleIfMissing(
+                            file = imported.file,
+                            archiveName = archiveName,
+                            category = category,
+                            bpm = detectedBpm,
+                            key = keyAnalysis?.key,
+                            keyConfidence = keyAnalysis?.confidence ?: 0f,
+                            genre = genre,
+                            archivePath = imported.archivePath
+                        )
+                        if (isDuplicate && metadataWritten) {
+                            repairedMetadataCount++
+                        } else if (!isDuplicate && metadataWritten) {
+                            importedCount++
+                        } else {
+                            failedMetadataCount++
+                            warnings += "${imported.name}: Lizenz-/Analysemetadaten konnten nicht geschrieben werden; Datei bleibt gesperrt"
+                        }
                     } catch (error: Exception) {
                         failedMetadataCount++
                         warnings += "${imported.name}: Herkunft konnte nicht gespeichert werden; Datei bleibt gesperrt"
@@ -1424,11 +1497,18 @@ class MainActivity : ComponentActivity() {
             }
             val finalStatus = buildString {
                 append("Import beendet: ").append(importedCount).append(" WAV(s) lokal hinzugefügt; ")
-                append(duplicateCount).append(" Duplikat(e) übersprungen.")
-                if (unknownCount > 0) append(" ").append(unknownCount).append(" unbekannte ZIP(s) nicht importiert.")
+                append(duplicateCount).append(" Duplikat(e) übersprungen; BPM für ")
+                    .append(analyzedBpmCount).append(" Loop(s), Tonart für ").append(analyzedKeyCount).append(" Loop(s) erkannt.")
+                if (repairedMetadataCount > 0) {
+                    append(" Fehlende Metadaten für ").append(repairedMetadataCount).append(" bestehende Duplikat(e) repariert.")
+                }
+                if (unverifiedArchiveCount > 0) {
+                    append(" ").append(unverifiedArchiveCount)
+                        .append(" ZIP(s) werden unabhängig vom Dateinamen als lizenzungeprüfte Nutzerimporte markiert.")
+                }
                 if (failedMetadataCount > 0) append(" ").append(failedMetadataCount).append(" Datei(en) ohne Lizenzmetadaten blockiert.")
                 if (warnings.isNotEmpty()) append(" Details: ").append(warnings.take(4).joinToString("; "))
-                append(" Pack-WAVs und Archive werden nicht in APK/GitHub/Website kopiert.")
+                append(" Alle Loops bleiben lokal; Archive/Roh-WAVs werden nicht in APK/GitHub/Website kopiert.")
             }
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
@@ -1493,7 +1573,8 @@ class MainActivity : ComponentActivity() {
             Uri.fromFile(item.file),
             bpm,
             sourceAttribution = sourceInfo,
-            displayNameOverride = item.title
+            displayNameOverride = item.title,
+            applyKeyMatch = item.category == FreesoundLoopCategory.BASSLINE || item.category == FreesoundLoopCategory.SYNTH
         )
     }
 
@@ -1505,6 +1586,8 @@ class MainActivity : ComponentActivity() {
         }
 
         val trackSnapshot = tracks.toList()
+        val targetBpmSnapshot = bpm
+        val targetKeySnapshot = currentLiveKey()
         autoSetCancelled = false
         autoSetPreparing = true
         freesoundBusy = true
@@ -1546,8 +1629,17 @@ class MainActivity : ComponentActivity() {
                 }
 
                 AUTO_SET_CATEGORIES.forEachIndexed { trackIndex, category ->
-                    val candidates = library.filter { it.category == category && it.file.canonicalPath !in usedPaths }
-                    val item = candidates.shuffled().firstOrNull()
+                    val candidates = library
+                        .filter {
+                            (it.category == category || trackIndex == 3 && it.category == FreesoundLoopCategory.SNARE) &&
+                                it.file.canonicalPath !in usedPaths
+                        }
+                        .sortedWith(
+                            compareBy<FreesoundLibraryItem> { keyMatchRank(it, targetKeySnapshot) }
+                                .thenBy { it.bpm?.let { sourceBpm -> abs(sourceBpm - targetBpmSnapshot) } ?: Float.MAX_VALUE }
+                                .thenBy { it.title }
+                        )
+                    val item = candidates.firstOrNull()
                     if (item != null) {
                         selectItem(trackIndex, item)
                         return@forEachIndexed
@@ -1697,8 +1789,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun attributionFor(item: FreesoundLibraryItem): String = when {
+        SamplePackLicenseCatalog.isUserSuppliedZipLicense(item.license) ->
+            "Nutzer-ZIP ${item.sourcePack}: Lizenz nicht unabhängig geprüft; lokaler Import. ${item.archivePath}"
         SamplePackLicenseCatalog.isLocalPackLicense(item.license) ->
-            "Samplepack ${item.sourcePack} (${item.provider}): ${item.license.removePrefix(LOCAL_SAMPLE_PACK_LICENSE_PREFIX)} Quelle: ${item.originalUrl}"
+            "Samplepack ${item.sourcePack} (${item.provider}): ${SamplePackLicenseCatalog.localLicenseDescription(item.license)} Quelle: ${item.originalUrl}"
         item.license == FreesoundLicensePolicy.ATTRIBUTION ->
             "CC BY-Namensnennung: ${item.title} · ${item.username} · ${item.originalUrl}"
         else -> "${item.license.ifBlank { "Freesound" }} · ${item.title} · ${item.username} · ${item.originalUrl}"
@@ -1856,10 +1950,12 @@ class MainActivity : ComponentActivity() {
         targetBpm: Float,
         sourceAttribution: String? = null,
         displayNameOverride: String? = null,
+        applyKeyMatch: Boolean = index == 1 || index == 4,
         onComplete: ((Boolean) -> Unit)? = null
     ) {
         if (previewingTrack == index) stopTrackPreview()
         val controlSnapshot = tracks[index]
+        val targetKeySnapshot = currentLiveKey()
         updateTrack(index) { it.copy(isLoading = true) }
         statusMessage = "WAV für ${tracks[index].label} wird geprüft …"
         ioExecutor.execute {
@@ -1867,17 +1963,17 @@ class MainActivity : ComponentActivity() {
             try {
                 copyUriToFile(uri, tempFile)
                 val decoded = tempFile.inputStream().use { WavDecoder.decode(it) }
-                val analysis = LoopTempoAnalyzer.analyze(decoded, targetBpm)
+                val prepared = prepareLoop(decoded, targetBpm, applyKeyMatch, targetKeySnapshot)
                 val target = trackFile(index)
-                if (!AudioEngine.loadTrack(index, decoded, analysis.bars)) {
+                if (!AudioEngine.loadTrack(index, prepared.audio, prepared.tempo.bars)) {
                     throw IllegalArgumentException("Native Audio-Engine hat diese WAV-Spur abgelehnt")
                 }
                 applyTrackControls(index, controlSnapshot)
                 if (!tempFile.renameTo(target)) {
                     val restored = if (target.isFile) runCatching {
                         val oldWav = target.inputStream().use { WavDecoder.decode(it) }
-                        val oldAnalysis = LoopTempoAnalyzer.analyze(oldWav, targetBpm)
-                        AudioEngine.loadTrack(index, oldWav, oldAnalysis.bars).also { loaded ->
+                        val oldPrepared = prepareLoop(oldWav, targetBpm, applyKeyMatch, targetKeySnapshot)
+                        AudioEngine.loadTrack(index, oldPrepared.audio, oldPrepared.tempo.bars).also { loaded ->
                             if (loaded) applyTrackControls(index, controlSnapshot)
                         }
                     }.getOrDefault(false) else false
@@ -1886,12 +1982,15 @@ class MainActivity : ComponentActivity() {
                 }
                 val fileName = displayNameOverride?.trim()?.take(80)?.takeIf { it.isNotBlank() }
                     ?: queryDisplayName(uri)
-                val detail = trackDetail(decoded, analysis)
+                val detail = trackDetail(decoded, prepared.tempo, prepared.key, prepared.pitchShiftSemitones, prepared.targetKey)
                 getSharedPreferences(PREF_TRACK_CONTROLS, MODE_PRIVATE).edit()
                     .putString(sourceAttributionKey(index), sourceAttribution.orEmpty())
                     .apply()
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
+                    if ((index == 1 || index == 4) && liveKeyAnchor == null) {
+                        liveKeyAnchor = prepared.matchedKey
+                    }
                     updateTrack(index) {
                         it.copy(
                             fileName = fileName,
@@ -1899,11 +1998,17 @@ class MainActivity : ComponentActivity() {
                             isLoaded = true,
                             isLoading = false,
                             enabled = true,
-                            sourceAttribution = sourceAttribution.orEmpty()
+                            sourceAttribution = sourceAttribution.orEmpty(),
+                            sourceBpm = prepared.tempo.detectedBpm,
+                            sourceKey = prepared.key.key,
+                            matchedKey = prepared.matchedKey,
+                            keyConfidence = prepared.key.confidence,
+                            pitchShiftSemitones = prepared.pitchShiftSemitones
                         )
                     }
                     AudioEngine.setTrackEnabled(index, true)
                     persistTrackControls(index)
+                    val analysis = prepared.tempo
                     val tempoText = when {
                         analysis.detectedBpm == null -> "BPM nicht sicher erkannt; Takte aus Dateilänge geschätzt"
                         analysis.tempoAmbiguous -> "≈${analysis.detectedBpm.roundToInt()} BPM, Halb-/Doppeltempo möglich"
@@ -1914,8 +2019,14 @@ class MainActivity : ComponentActivity() {
                     } else {
                         "sehr kurzer Clip: Varispeed-Fallback, Tonhöhe ändert sich"
                     }
+                    val keyText = when {
+                        prepared.key.key == null -> "Tonart unklar; keine Transposition"
+                        prepared.pitchShiftSemitones != 0 ->
+                            "Tonart ${prepared.key.key} → ${prepared.targetKey} (${if (prepared.pitchShiftSemitones > 0) "+" else ""}${prepared.pitchShiftSemitones} Halbtöne)"
+                        else -> "Tonart ${prepared.matchedKey ?: prepared.key.key}, keine Transposition nötig"
+                    }
                     val launchText = if (playing) " Start am nächsten Takt." else ""
-                    statusMessage = "$fileName: $tempoText, ${analysis.bars} Takte auf ${targetBpm.toInt()} BPM quantisiert; $stretchText.$launchText"
+                    statusMessage = "$fileName: $tempoText, ${analysis.bars} Takte auf ${targetBpm.toInt()} BPM quantisiert; $keyText; $stretchText.$launchText"
                     onComplete?.invoke(true)
                 }
             } catch (error: Exception) {
@@ -1958,16 +2069,25 @@ class MainActivity : ComponentActivity() {
         val targetBpm = bpm
         val controlSnapshots = tracks.toList()
         ioExecutor.execute {
+            var restoredKeyAnchor: String? = liveKeyAnchor
             try {
                 for (index in controlSnapshots.indices) {
                     val file = trackFile(index)
                     if (!file.isFile) continue
                     try {
                         val decoded = file.inputStream().use { WavDecoder.decode(it) }
-                        val analysis = LoopTempoAnalyzer.analyze(decoded, targetBpm)
-                        if (AudioEngine.loadTrack(index, decoded, analysis.bars)) {
+                        val applyKeyMatch = index == 1 || index == 4
+                        val prepared = prepareLoop(decoded, targetBpm, applyKeyMatch, restoredKeyAnchor)
+                        if (AudioEngine.loadTrack(index, prepared.audio, prepared.tempo.bars)) {
                             applyTrackControls(index, controlSnapshots[index])
-                            val detail = trackDetail(decoded, analysis)
+                            if (applyKeyMatch && restoredKeyAnchor == null) restoredKeyAnchor = prepared.matchedKey
+                            val detail = trackDetail(
+                                decoded,
+                                prepared.tempo,
+                                prepared.key,
+                                prepared.pitchShiftSemitones,
+                                prepared.targetKey
+                            )
                             runOnUiThread {
                                 if (isFinishing || isDestroyed) return@runOnUiThread
                                 updateTrack(index) {
@@ -1977,6 +2097,11 @@ class MainActivity : ComponentActivity() {
                                         isLoaded = true,
                                         isLoading = false,
                                         enabled = controlSnapshots[index].enabled,
+                                        sourceBpm = prepared.tempo.detectedBpm,
+                                        sourceKey = prepared.key.key,
+                                        matchedKey = prepared.matchedKey,
+                                        keyConfidence = prepared.key.confidence,
+                                        pitchShiftSemitones = prepared.pitchShiftSemitones,
                                         sourceAttribution = getSharedPreferences(PREF_TRACK_CONTROLS, MODE_PRIVATE)
                                             .getString(sourceAttributionKey(index), "").orEmpty()
                                     )
@@ -1994,13 +2119,57 @@ class MainActivity : ComponentActivity() {
                 }
             } finally {
                 runOnUiThread {
-                    if (!isFinishing && !isDestroyed) tracksRestored = true
+                    if (!isFinishing && !isDestroyed) {
+                        liveKeyAnchor = restoredKeyAnchor
+                        tracksRestored = true
+                    }
                 }
             }
         }
     }
 
-    private fun trackDetail(wav: DecodedWav, analysis: LoopTempoAnalysis): String {
+    private fun currentLiveKey(): String? {
+        liveKeyAnchor?.let { return it }
+        return listOf(4, 1).firstNotNullOfOrNull { index ->
+            tracks.getOrNull(index)?.takeIf { it.isLoaded }?.let { it.matchedKey ?: it.sourceKey }
+        }
+    }
+
+    private fun keyMatchRank(item: FreesoundLibraryItem, targetKey: String?): Int {
+        if (targetKey == null) return 1
+        val sourceKey = item.key ?: return 3
+        val shift = LoopKeyAnalyzer.semitoneShift(sourceKey, targetKey) ?: return 2
+        return if (shift == 0) 0 else 1
+    }
+
+    private fun prepareLoop(
+        wav: DecodedWav,
+        targetBpm: Float,
+        applyKeyMatch: Boolean,
+        requestedTargetKey: String?
+    ): PreparedLoop {
+        val tempo = LoopTempoAnalyzer.analyze(wav, targetBpm)
+        val key = LoopKeyAnalyzer.analyze(wav)
+        val targetKey = if (applyKeyMatch) requestedTargetKey ?: key.key else null
+        val semitoneShift = if (applyKeyMatch && key.key != null && targetKey != null) {
+            LoopKeyAnalyzer.semitoneShift(key.key, targetKey) ?: 0
+        } else 0
+        val audio = if (semitoneShift == 0) wav else LoopPitchShifter.shift(wav, semitoneShift)
+        val matchedKey = when {
+            key.key == null -> null
+            semitoneShift != 0 -> targetKey
+            else -> key.key
+        }
+        return PreparedLoop(audio, tempo, key, targetKey, semitoneShift, matchedKey)
+    }
+
+    private fun trackDetail(
+        wav: DecodedWav,
+        analysis: LoopTempoAnalysis,
+        key: LoopKeyAnalysis? = null,
+        pitchShiftSemitones: Int = 0,
+        targetKey: String? = null
+    ): String {
         val duration = wav.frameCount.toDouble() / wav.sampleRate
         val durationText = String.format(Locale.getDefault(), "%.1f s", duration)
         val tempoText = when {
@@ -2013,7 +2182,14 @@ class MainActivity : ComponentActivity() {
         } else {
             String.format(Locale.getDefault(), "Varispeed ×%.2f (Tonhöhe ändert)", analysis.playbackRate)
         }
-        return "$durationText · ${analysis.bars} Takte · $tempoText · $rateText"
+        val keyText = when {
+            key == null -> null
+            key.key == null -> "Tonart unklar"
+            pitchShiftSemitones != 0 && targetKey != null -> "${key.key} → $targetKey"
+            else -> "${key.key} · ${(key.confidence * 100).toInt()}%"
+        }
+        return listOfNotNull("$durationText · ${analysis.bars} Takte · $tempoText · $rateText", keyText)
+            .joinToString(" · ")
     }
 
     private fun clearTrack(index: Int) {
@@ -2033,8 +2209,20 @@ class MainActivity : ComponentActivity() {
                         isLoading = false,
                         enabled = true,
                         detail = "",
-                        sourceAttribution = ""
+                        sourceAttribution = "",
+                        sourceBpm = null,
+                        sourceKey = null,
+                        matchedKey = null,
+                        keyConfidence = 0f,
+                        pitchShiftSemitones = 0
                     )
+                }
+                if (index == 1 || index == 4) {
+                    liveKeyAnchor = listOf(4, 1)
+                        .filter { it != index }
+                        .firstNotNullOfOrNull { remaining ->
+                            tracks[remaining].takeIf { it.isLoaded }?.let { it.matchedKey ?: it.sourceKey }
+                        }
                 }
                 statusMessage = "Spur ${tracks[index].label} entfernt."
                 if (playing && AudioEngine.loadedTrackCount() == 0) stopPlayback()
