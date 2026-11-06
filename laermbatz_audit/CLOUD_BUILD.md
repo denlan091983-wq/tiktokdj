@@ -10,17 +10,17 @@ Im Projektordner ausführen:
 
 Das Skript führt den hostseitigen C++17-DSP-/Autopilot-Smoke-Test, danach `:app:testDebugUnitTest` und anschließend `:app:assembleDebug` aus. Es erwartet Android SDK Platform 34, Build Tools 34.0.0, NDK 26.1.10909125, CMake 3.22.1 und JDK 17. Die Android-/NDK-/CMake-Versionen sind im App-Modul gepinnt. Der ARM64-Cloudhost benötigt für einige x86_64-Buildwerkzeuge QEMU-user/binfmt.
 
-## Letzter verifizierter Audit-Build
+## Letzter verifizierter Build
 
-Am 5. November 2026 lief `./cloud-build.sh` nach der Oboe-Streamstatus-/Wiederanlaufkorrektur mit **BUILD SUCCESSFUL** durch. Es bestanden **58 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests. Dazu gehören Freesound-Lizenzfilter und Auto-Set-Fallbacks, Pack-Katalog/Store, ZIP-Dekompressions- und WAV-Importgrenzen sowie die bestehenden Aufnahme-/Audio-Tests. Die nativen C++17-Prüfungen für den SPSC-Ringbuffer und die DSP-/Autopilot-Kette bestanden; der native DSP-Smoke umfasst **11 DSP-/Arrangementprüfungen**, darunter eine Regression für extreme Float-, NaN- und Infinity-Eingaben. Diese hostseitigen Prüfungen sind keine Android-Instrumentierungs- oder Gerätetests.
+Am 6. November 2026 lief `./gradlew testDebugUnitTest assembleDebug` nach der Erhöhung des ZIP-Importlimits von 8 auf 20 erfolgreich durch. Das kumulative Dekompressionslimit bleibt bei 4 GiB pro Auswahl. Es bestanden **76 JVM-Tests** ohne Fehlschläge, Fehler oder übersprungene Tests. Die nativen C++17-Smokes für SPSC-Ringbuffer, WSOLA, DSP-Effekte und Autopilot bestanden ebenfalls. Dies sind hostseitige Softwareprüfungen, keine Android-Instrumentierungs- oder Gerätetests.
 
-Die APK ist `de.laermbatz.app`, Version `0.1.0` / Code `1`, `minSdk 27`, `targetSdk 34` und enthält ausschließlich `arm64-v8a`. `apksigner verify` war erfolgreich; die Datei ist debug-signiert mit APK Signature Scheme v2. Die Dateigröße beträgt **10.808.869 Byte**. SHA-256:
+Die APK ist `de.laermbatz.app`, Version `0.1.1` / Code `2`, `minSdk 27`, `targetSdk 34` und enthält ausschließlich `arm64-v8a`. `apksigner verify` war erfolgreich; die Datei ist debug-signiert mit APK Signature Scheme v2. Die Dateigröße beträgt **10.785.645 Byte**. SHA-256:
 
-`9171b267c9054bde0a43a40d26d7cdef1244c3ba3059ac0d17d9471e490fbbaf`
+`45b07fb165176a52719d4f11d77df98bab0253b08dce8201e8eccd97da14578d`
 
-Der verbindliche Buildpfad ist [`app/build/outputs/apk/debug/app-debug.apk`](app/build/outputs/apk/debug/app-debug.apk); die herunterladbare Kopie im Monorepo liegt unter [`artifacts/Laermbatz-debug.apk`](../artifacts/Laermbatz-debug.apk), mit Prüfsumme in [`artifacts/SHA256SUMS.txt`](../artifacts/SHA256SUMS.txt).
+Das aktuelle Artefakt ist [LARMBATZ_ZipLoopLibrary_20ZIP_debug.apk](../artifacts/LARMBATZ_ZipLoopLibrary_20ZIP_debug.apk); der lokale Gradle-Buildpfad lautet `app/build/outputs/apk/debug/app-debug.apk`. Prüfsummen stehen in `../artifacts/SHA256SUMS.txt`.
 
-Die vollständigen Android-, Webradio- und Python-Quellen sowie die geprüfte APK liegen einzeln in diesem Repository; ein bereinigtes Gesamt-Quell- und APK-Archiv wird zusätzlich separat bereitgestellt. Drive-ZIP-Archive und rohe Loop-WAVs sind wegen der Rohdaten-Weitergaberechte nicht enthalten; Details stehen in [SAMPLEPACK_LICENSE_NOTES.md](SAMPLEPACK_LICENSE_NOTES.md). Secrets, persönliche Aufnahmen, Datenbankexporte, `node_modules`, Gradle-/CMake-Caches und kompilierten Buildausgaben sind ausgeschlossen.
+Das [Gesamt-Quell- und APK-Archiv](../Laermbatz_Quellcode.zip) enthält Android-, Webradio- und Python-Quellen, Tests/Dokumentation sowie den aktuellen Debug-Build. Drive-ZIP-Archive und rohe Loop-WAVs sind wegen der Rohdaten-Weitergaberechte nicht enthalten; Details stehen in [SAMPLEPACK_LICENSE_NOTES.md](SAMPLEPACK_LICENSE_NOTES.md). Secrets, persönliche Aufnahmen, Datenbankexporte, `node_modules`, Gradle-/CMake-Caches und weitere generierte Buildausgaben sind ausgeschlossen.
 
 ## Nicht abgenommen
 

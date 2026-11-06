@@ -2261,7 +2261,7 @@ class MainActivity : ComponentActivity() {
         private const val KEY_FREESOUND_PENDING_STATE = "freesound_pending_oauth_state"
         private const val PREF_TRACK_CONTROLS = "mixer_track_controls"
         private const val FREESOUND_LIBRARY_DIR = "freesound_library"
-        private const val MAX_SAMPLE_PACK_ARCHIVES = 8
+        private const val MAX_SAMPLE_PACK_ARCHIVES = 20
         private const val MAX_SAMPLE_PACK_BATCH_DECOMPRESSED_BYTES = 4L * 1024L * 1024L * 1024L
         private const val MAX_FREESOUND_FILE_BYTES = 32L * 1024L * 1024L
         private const val MAX_FREESOUND_LIBRARY_BYTES = 2_684_354_560L
